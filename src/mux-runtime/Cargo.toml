@@ -1,0 +1,24 @@
+[package]
+name = "tinkershell-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mux-runtime"
+path = "src/main.rs"
+
+[[bin]]
+name = "tinkershell"
+path = "src/cli.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+portable-pty = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+vt100 = "0.15"
+windows-sys = { version = "0.59", features = ["Win32_Security", "Win32_Security_Authorization", "Win32_System_Memory", "Win32_Foundation"] }
