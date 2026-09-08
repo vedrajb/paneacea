@@ -8,17 +8,18 @@ pub struct Queries {
 }
 impl Queries {
     pub fn process(&mut self, data: &[u8], parser: &mut vt100::Parser) -> (Vec<u8>, Vec<u8>) {
-        let (output, replies, _) = self.process_with_title(data, parser);
+        let (output, replies, _, _) = self.process_with_title(data, parser);
         (output, replies)
     }
     pub fn process_with_title(
         &mut self,
         data: &[u8],
         parser: &mut vt100::Parser,
-    ) -> (Vec<u8>, Vec<u8>, Option<String>) {
+    ) -> (Vec<u8>, Vec<u8>, Option<String>, Option<String>) {
         let mut output = Vec::new();
         let mut replies = Vec::new();
         let mut title = None;
+        let mut cwd = None;
         let mut parsed = 0;
         for &byte in data {
             if self.string {
@@ -31,7 +32,9 @@ impl Queries {
                         {
                             self.string_buffer.pop();
                         }
-                        title = osc_title(&self.string_buffer);
+                        let (new_title, new_cwd) = osc_metadata(&self.string_buffer);
+                        title = new_title;
+                        cwd = new_cwd;
                     } else if self.string_buffer.len() < 4096 {
                         self.string_buffer.push(byte);
                     }
@@ -101,18 +104,81 @@ impl Queries {
             }
         }
         parser.process(&output[parsed..]);
-        (output, replies, title)
+        (output, replies, title, cwd)
     }
 }
-fn osc_title(data: &[u8]) -> Option<String> {
-    let separator = data.iter().position(|byte| *byte == b';')?;
-    if !matches!(data.get(..separator), Some(b"0" | b"1" | b"2")) {
-        return None;
+fn osc_metadata(data: &[u8]) -> (Option<String>, Option<String>) {
+    let Some(separator) = data.iter().position(|byte| *byte == b';') else {
+        return (None, None);
+    };
+    match data.get(..separator) {
+        Some(b"0" | b"1" | b"2") => {
+            let title = String::from_utf8_lossy(&data[separator + 1..])
+                .trim()
+                .to_string();
+            ((!title.is_empty()).then_some(title), None)
+        }
+        Some(b"7") => (None, osc_directory(&data[separator + 1..])),
+        _ => (None, None),
     }
-    let title = String::from_utf8_lossy(&data[separator + 1..])
-        .trim()
-        .to_string();
-    (!title.is_empty()).then_some(title)
+}
+
+fn osc_directory(data: &[u8]) -> Option<String> {
+    let uri = percent_decode(std::str::from_utf8(data).ok()?.trim())?;
+    let value = uri.strip_prefix("file://")?;
+    let path = if value.starts_with('/') {
+        value
+    } else {
+        let (host, path) = value.split_once('/')?;
+        if !host.is_empty()
+            && !host.eq_ignore_ascii_case("localhost")
+            && !std::env::var("COMPUTERNAME")
+                .map(|name| name.eq_ignore_ascii_case(host))
+                .unwrap_or(false)
+        {
+            return None;
+        }
+        path
+    };
+    let path = if path.len() >= 3 && path.as_bytes()[0] == b'/' && path.as_bytes()[2] == b':' {
+        &path[1..]
+    } else if path.len() >= 3
+        && path.as_bytes()[0] == b'/'
+        && path.as_bytes()[2] == b'/'
+        && path.as_bytes()[1].is_ascii_alphabetic()
+    {
+        &path[1..]
+    } else {
+        path
+    };
+    (!path.is_empty() && std::path::Path::new(path).is_absolute()).then_some(path.into())
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let high = bytes.get(index + 1).copied().and_then(hex_digit)?;
+            let low = bytes.get(index + 2).copied().and_then(hex_digit)?;
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -143,5 +209,27 @@ mod tests {
         assert_eq!(output, data);
         assert!(replies.is_empty());
         assert_eq!(parser.screen().contents(), "你好");
+    }
+
+    #[test]
+    fn fragmented_osc7_extracts_a_local_windows_path() {
+        let mut queries = Queries::default();
+        let mut parser = vt100::Parser::new(30, 120, 0);
+        let (_, _, title, cwd) =
+            queries.process_with_title(b"\x1b]7;file:///C:/Users/Test%20Folder\x1b", &mut parser);
+        assert!(title.is_none());
+        assert!(cwd.is_none());
+        let (_, _, title, cwd) = queries.process_with_title(b"\\", &mut parser);
+        assert!(title.is_none());
+        assert_eq!(cwd.as_deref(), Some("C:/Users/Test Folder"));
+    }
+
+    #[test]
+    fn osc7_rejects_remote_hosts() {
+        let mut queries = Queries::default();
+        let mut parser = vt100::Parser::new(30, 120, 0);
+        let (_, _, _, cwd) =
+            queries.process_with_title(b"\x1b]7;file://remote/C:/Users/Test\x07", &mut parser);
+        assert!(cwd.is_none());
     }
 }

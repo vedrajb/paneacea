@@ -105,6 +105,28 @@ internal static class Program
                         && setting.GetInt32() == 11) break;
                     await Task.Delay(50);
                 }
+                var historyCombo = FindVisualChild<ComboBox>(paneHost, "TerminalHistoryLinesComboBox");
+                Check(historyCombo is not null && historyCombo.Items.Count == 6, "settings panel exposes saved terminal history presets");
+                var selectedHistoryLines = historyCombo?.SelectedItem?.GetType().GetProperty("Lines")?.GetValue(historyCombo.SelectedItem);
+                Check(selectedHistoryLines is int lines && lines == 2000, "saved terminal history defaults to 2,000 lines");
+                historyCombo!.SelectedIndex = 1;
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    var historyState = await client.State();
+                    if (historyState.Settings.TryGetValue("terminalHistoryLines", out var setting)
+                        && setting.ValueKind == System.Text.Json.JsonValueKind.Number
+                        && setting.GetInt32() == 500) break;
+                    await Task.Delay(50);
+                }
+                historyCombo.SelectedIndex = 2;
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    var restoredHistoryState = await client.State();
+                    if (restoredHistoryState.Settings.TryGetValue("terminalHistoryLines", out var setting)
+                        && setting.ValueKind == System.Text.Json.JsonValueKind.Number
+                        && setting.GetInt32() == 2000) break;
+                    await Task.Delay(50);
+                }
                 var gitShell = shellCombo.Items.Cast<ShellProfile>().SingleOrDefault(shell => shell.Id == "git-bash");
                 if (gitShell is { IsAvailable: true } && shellCombo.SelectedItem is ShellProfile originalShell)
                 {
@@ -179,6 +201,19 @@ internal static class Program
                 await Task.Delay(250);
                 Check(HasNativeFocus(splitControl), "mouse-selected pane receives native keyboard focus");
                 Check(paneBorders[splitPaneId].BorderThickness.Left == 2, "mouse-selected pane receives the focus highlight");
+                var splitter = FindVisualChildren<GridSplitter>(window).Single();
+                Check(!splitter.Focusable, "splitter cannot capture terminal arrow keys");
+                var widthBeforeArrows = splitControl.ActualWidth;
+                var heightBeforeArrows = splitControl.ActualHeight;
+                var terminalHandle = FindVisualChildren<TerminalContainer>(splitControl).Single().Handle;
+                foreach (var arrow in new[] { 0x25, 0x26, 0x27, 0x28 })
+                {
+                    PostMessage(terminalHandle, 0x100, new IntPtr(arrow), new IntPtr(1));
+                    PostMessage(terminalHandle, 0x101, new IntPtr(arrow), new IntPtr(unchecked((int)0xC0000001)));
+                    await Task.Delay(50);
+                }
+                Check(HasNativeFocus(splitControl), "native arrow messages retain terminal focus");
+                Check(splitControl.ActualWidth == widthBeforeArrows && splitControl.ActualHeight == heightBeforeArrows, "native arrow messages do not resize panes");
                 await Execute("Terminal.ResizePaneRight");
                 await Execute("Terminal.MoveFocusLeft");
                 await Execute("Terminal.NewTab");
@@ -214,6 +249,9 @@ internal static class Program
     }
     [DllImport("user32.dll")]
     private static extern IntPtr GetFocus();
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsChild(IntPtr parent, IntPtr child);

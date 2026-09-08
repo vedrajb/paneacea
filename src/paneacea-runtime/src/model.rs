@@ -13,6 +13,11 @@ pub fn now() -> u64 {
         .as_secs()
 }
 
+pub const DEFAULT_TERMINAL_ROWS: u16 = 30;
+pub const DEFAULT_TERMINAL_COLUMNS: u16 = 120;
+pub const DEFAULT_TERMINAL_HISTORY_LINES: usize = 2000;
+pub const TERMINAL_HISTORY_SETTING: &str = "terminalHistoryLines";
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Layout {
@@ -152,11 +157,23 @@ pub struct Pane {
     pub environment: BTreeMap<String, String>,
     pub initial_working_directory: String,
     pub current_working_directory: String,
+    #[serde(default = "default_terminal_rows")]
+    pub terminal_rows: u16,
+    #[serde(default = "default_terminal_columns")]
+    pub terminal_columns: u16,
     pub runtime_terminal_id: String,
     pub pid: Option<u32>,
     pub generation: String,
     pub agent: Option<serde_json::Value>,
     pub error: Option<String>,
+}
+
+fn default_terminal_rows() -> u16 {
+    DEFAULT_TERMINAL_ROWS
+}
+
+fn default_terminal_columns() -> u16 {
+    DEFAULT_TERMINAL_COLUMNS
 }
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]

@@ -12,8 +12,17 @@ public sealed class RuntimeClient(string? pipeName = null)
     public async Task<NamedPipeClientStream> Connect(CancellationToken cancellationToken = default)
     {
         var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        try { await pipe.ConnectAsync(3000, cancellationToken); return pipe; }
-        catch { await pipe.DisposeAsync(); throw; }
+        try
+        {
+            await pipe.ConnectAsync(3000, cancellationToken);
+            return pipe;
+        }
+        catch (Exception error)
+        {
+            AppLogger.Error("ipc.connect.failed", $"pipe={PipeName} error={error.Message}");
+            await pipe.DisposeAsync();
+            throw;
+        }
     }
     public static async Task Send(Stream stream, object value, CancellationToken cancellationToken = default)
     {
@@ -32,10 +41,21 @@ public sealed class RuntimeClient(string? pipeName = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        await using var pipe = await Connect(timeout.Token);
-        await Send(pipe, new { id = Guid.NewGuid().ToString(), method, @params = parameters ?? new { } }, timeout.Token);
-        using var reader = new StreamReader(pipe, Encoding.UTF8);
-        return Result(await reader.ReadLineAsync(timeout.Token));
+        if (method is not ("pane.sendInput" or "state.get")) AppLogger.Info("ipc.call.start", $"method={method}");
+        try
+        {
+            await using var pipe = await Connect(timeout.Token);
+            await Send(pipe, new { id = Guid.NewGuid().ToString(), method, @params = parameters ?? new { } }, timeout.Token);
+            using var reader = new StreamReader(pipe, Encoding.UTF8);
+            var result = Result(await reader.ReadLineAsync(timeout.Token));
+            if (method is not ("pane.sendInput" or "state.get")) AppLogger.Info("ipc.call.complete", $"method={method}");
+            return result;
+        }
+        catch (Exception error)
+        {
+            AppLogger.Error("ipc.call.failed", $"method={method} error={error.Message}");
+            throw;
+        }
     }
     public async Task<WorkspaceState> State() => (await Call("state.get")).Deserialize<WorkspaceState>(JsonOptions)!;
 }

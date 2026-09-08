@@ -34,7 +34,7 @@ async fn start(name: &str, directory: &Path) -> Result<Daemon> {
     }
     anyhow::bail!("runtime did not start")
 }
-async fn snapshot(name: &str, pane_id: &str) -> Result<String> {
+async fn attach(name: &str, pane_id: &str) -> Result<Value> {
     let mut pipe = ClientOptions::new().open(format!(r"\\.\pipe\{name}"))?;
     write_frame(
         &mut pipe,
@@ -43,10 +43,11 @@ async fn snapshot(name: &str, pane_id: &str) -> Result<String> {
     .await?;
     let response = read_frame(&mut BufReader::new(pipe)).await?.unwrap();
     anyhow::ensure!(response["ok"] == true, "attach failed: {response}");
-    Ok(
-        String::from_utf8_lossy(&STANDARD.decode(response["result"]["data"].as_str().unwrap())?)
-            .into_owned(),
-    )
+    Ok(response["result"].clone())
+}
+async fn snapshot(name: &str, pane_id: &str) -> Result<String> {
+    let result = attach(name, pane_id).await?;
+    Ok(String::from_utf8_lossy(&STANDARD.decode(result["data"].as_str().unwrap())?).into_owned())
 }
 
 #[tokio::test]
@@ -55,6 +56,12 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
     let root = std::env::current_dir()?;
     let directory = root.join(".data").join(&name);
     std::fs::create_dir_all(&directory)?;
+    let first_directory = directory.join("first");
+    let second_directory = directory.join("second");
+    let third_directory = directory.join("third");
+    std::fs::create_dir_all(&first_directory)?;
+    std::fs::create_dir_all(&second_directory)?;
+    std::fs::create_dir_all(&third_directory)?;
     let daemon = start(&name, &directory).await?;
     let state = call(
         &name,
@@ -67,6 +74,12 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
         &name,
         "settings.set",
         json!({"key":"defaultShell","value":{"id":"pwsh","executable":"powershell.exe","arguments":["-NoLogo","-NoProfile"]}}),
+    )
+    .await?;
+    call(
+        &name,
+        "settings.set",
+        json!({"key":"terminalHistoryLines","value":500}),
     )
     .await?;
     let state = call(&name, "tab.create", json!({"workspaceId":workspace_id})).await?;
@@ -87,6 +100,38 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
         state["panes"][pane_id]["initialWorkingDirectory"],
         root.to_str().unwrap()
     );
+    let first_command = format!(
+        "Set-Location -LiteralPath '{}'; 1..50 | ForEach-Object {{ Write-Output ('ONE-' + $_) }}; Write-Output 'PERSIST-PANE-ONE'\r",
+        first_directory.to_string_lossy().replace('\'', "''")
+    );
+    call(
+        &name,
+        "pane.sendInput",
+        json!({"paneId":pane_id,"data":first_command}),
+    )
+    .await?;
+    let mut first_saved = false;
+    let mut first_cwd = String::new();
+    let mut first_output = String::new();
+    for _ in 0..100 {
+        let current = call(&name, "state.get", json!({})).await?;
+        let cwd = current["panes"][pane_id]["currentWorkingDirectory"]
+            .as_str()
+            .unwrap_or_default();
+        first_cwd = cwd.into();
+        first_output = snapshot(&name, pane_id).await?;
+        if first_cwd.replace('\\', "/") == first_directory.to_string_lossy().replace('\\', "/")
+            && first_output.contains("PERSIST-PANE-ONE")
+        {
+            first_saved = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        first_saved,
+        "first pane should persist its working directory and output; cwd={first_cwd}; output={first_output}"
+    );
     call(
         &name,
         "settings.set",
@@ -106,6 +151,12 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
     assert_eq!(cmd_state["panes"][cmd_pane_id]["executable"], "cmd.exe");
     assert_eq!(cmd_state["panes"][cmd_pane_id]["arguments"], json!([]));
     call(&name, "tab.close", json!({"tabId":cmd_tab_id})).await?;
+    call(
+        &name,
+        "settings.set",
+        json!({"key":"defaultShell","value":{"id":"pwsh","executable":"powershell.exe","arguments":["-NoLogo","-NoProfile"]}}),
+    )
+    .await?;
     snapshot(&name, pane_id).await?;
     call(&name, "pane.sendInput", json!({"paneId":pane_id,"data":"$tinkerTest = 'LIVE'; Write-Output ($tinkerTest + '-DETACHED-OK')\r"})).await?;
     let mut found = false;
@@ -155,10 +206,38 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
     let second = state["workspaces"][0]["tabs"][0]["activePaneId"]
         .as_str()
         .unwrap();
+    for _ in 0..100 {
+        if snapshot(&name, second).await?.contains("PS ") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    call(
+        &name,
+        "pane.sendInput",
+        json!({"paneId":second,"data":format!("Set-Location -LiteralPath '{}'; 1..50 | ForEach-Object {{ Write-Output ('TWO-' + $_) }}; Write-Output 'PERSIST-PANE-TWO'\r", second_directory.to_string_lossy().replace('\'', "''"))}),
+    )
+    .await?;
     call(
         &name,
         "pane.split",
         json!({"paneId":second,"orientation":"horizontal"}),
+    )
+    .await?;
+    let split_state = call(&name, "state.get", json!({})).await?;
+    let third = split_state["workspaces"][0]["tabs"][0]["activePaneId"]
+        .as_str()
+        .unwrap();
+    for _ in 0..100 {
+        if snapshot(&name, third).await?.contains("PS ") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    call(
+        &name,
+        "pane.sendInput",
+        json!({"paneId":third,"data":format!("Set-Location -LiteralPath '{}'; Write-Output 'PERSIST-PANE-THREE'\r", third_directory.to_string_lossy().replace('\'', "''"))}),
     )
     .await?;
     call(
@@ -173,6 +252,20 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
         json!({"tabId":tab_id,"title":"Saved layout"}),
     )
     .await?;
+    for _ in 0..100 {
+        if snapshot(&name, second).await?.contains("PERSIST-PANE-TWO") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let viewport = call(
+        &name,
+        "terminal.viewport.set",
+        json!({"paneId":second,"offset":2}),
+    )
+    .await?;
+    assert!(viewport["viewportOffset"].as_u64().unwrap() > 0);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
     let before = call(&name, "state.get", json!({})).await?;
     drop(daemon);
     let daemon = start(&name, &directory).await?;
@@ -184,6 +277,33 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
         json!(["-NoLogo", "-NoProfile"])
     );
     assert!(restored["panes"][pane_id]["error"].is_null());
+    assert_eq!(
+        restored["panes"][pane_id]["currentWorkingDirectory"]
+            .as_str()
+            .unwrap()
+            .replace('\\', "/"),
+        first_directory.to_string_lossy().replace('\\', "/")
+    );
+    for pane in [pane_id, second, third] {
+        let restored_snapshot = attach(&name, pane).await?;
+        let restored_output =
+            String::from_utf8_lossy(&STANDARD.decode(restored_snapshot["data"].as_str().unwrap())?)
+                .into_owned();
+        assert!(restored_snapshot["restored"] == true);
+        let marker = if pane == pane_id {
+            "PERSIST-PANE-ONE"
+        } else if pane == second {
+            "PERSIST-PANE-TWO"
+        } else {
+            "PERSIST-PANE-THREE"
+        };
+        assert!(restored_output.contains(marker));
+        if pane == pane_id {
+            assert!(restored_output.contains("Paneacea restored terminal history"));
+        }
+    }
+    let restored_second = attach(&name, second).await?;
+    assert_eq!(restored_second["viewportOffset"].as_u64(), Some(0));
     let closed = call(&name, "pane.close", json!({"paneId":second})).await?;
     assert_eq!(closed["panes"].as_object().unwrap().len(), 2);
     let closed: Value = call(

@@ -1,4 +1,9 @@
-use crate::{model::*, persistence::Store, pty::Terminal};
+use crate::{
+    logging,
+    model::*,
+    persistence::Store,
+    pty::{history_snapshot, Terminal},
+};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, path::Path};
@@ -25,8 +30,48 @@ fn directory(value: &str) -> Result<String> {
 }
 impl Runtime {
     pub fn open(path: &Path, pipe: String) -> Result<Self> {
+        logging::info(
+            "runtime.restore.start",
+            &format!("database={} pipe={pipe}", path.display()),
+        );
         let store = Store::open(path)?;
         let state = store.load()?;
+        let history_limit = state
+            .settings
+            .get(TERMINAL_HISTORY_SETTING)
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| valid_history_limit(*value))
+            .unwrap_or(DEFAULT_TERMINAL_HISTORY_LINES);
+        logging::info(
+            "runtime.restore.settings",
+            &format!(
+                "history_limit={} persisted_panes={} configured_history_setting={}",
+                history_limit,
+                state.panes.len(),
+                state
+                    .settings
+                    .get(TERMINAL_HISTORY_SETTING)
+                    .map(Value::to_string)
+                    .unwrap_or_else(|| "missing".into())
+            ),
+        );
+        let mut histories = BTreeMap::new();
+        if history_limit > 0 {
+            for pane_id in state.panes.keys() {
+                if let Some(history) = store.load_history(pane_id)? {
+                    histories.insert(pane_id.clone(), history);
+                }
+            }
+        }
+        logging::info(
+            "runtime.restore.histories",
+            &format!(
+                "history_rows_loaded={} history_enabled={}",
+                histories.len(),
+                history_limit > 0
+            ),
+        );
         let mut runtime = Self {
             state,
             terminals: BTreeMap::new(),
@@ -34,18 +79,72 @@ impl Runtime {
             pipe,
         };
         for pane in runtime.state.panes.values_mut() {
+            let history = histories.remove(&pane.id);
+            let restored = history.is_some();
+            logging::info(
+                "pane.restore.start",
+                &format!(
+                    "pane_id={} tab_id={} history_present={} rows={} columns={} cwd={}",
+                    pane.id,
+                    pane.tab_id,
+                    history.is_some(),
+                    history
+                        .as_ref()
+                        .map(|value| value.rows)
+                        .unwrap_or(pane.terminal_rows),
+                    history
+                        .as_ref()
+                        .map(|value| value.columns)
+                        .unwrap_or(pane.terminal_columns),
+                    pane.current_working_directory
+                ),
+            );
+            if let Some(history) = &history {
+                pane.terminal_rows = history.rows;
+                pane.terminal_columns = history.columns;
+            }
             pane.pid = None;
             if pane.title.trim().is_empty() {
                 pane.title = shell_title(&pane.executable);
             }
-            match Terminal::launch(pane, &runtime.pipe) {
+            match Terminal::launch(pane, &runtime.pipe, history, history_limit) {
                 Ok(terminal) => {
+                    logging::info(
+                        "pane.restore.complete",
+                        &format!(
+                            "pane_id={} pid={} generation={} restored={}",
+                            pane.id,
+                            pane.pid
+                                .map_or_else(|| "none".into(), |pid| pid.to_string()),
+                            pane.generation,
+                            restored
+                        ),
+                    );
                     runtime.terminals.insert(pane.id.clone(), terminal);
                 }
-                Err(error) => pane.error = Some(error.to_string()),
+                Err(error) => {
+                    logging::error(
+                        "pane.restore.failed",
+                        &format!("pane_id={} error={error:#}", pane.id),
+                    );
+                    pane.error = Some(error.to_string())
+                }
             }
         }
         runtime.store.save(&runtime.state)?;
+        if history_limit == 0 {
+            runtime.store.clear_history()?;
+        }
+        logging::info(
+            "runtime.restore.complete",
+            &format!(
+                "workspaces={} panes={} terminals={} orphaned_history_rows={}",
+                runtime.state.workspaces.len(),
+                runtime.state.panes.len(),
+                runtime.terminals.len(),
+                histories.len()
+            ),
+        );
         Ok(runtime)
     }
     fn workspace(&mut self, id: &str) -> Result<&mut Workspace> {
@@ -80,13 +179,81 @@ impl Runtime {
             .unwrap_or_else(|| vec!["-NoLogo".into()]);
         Some((executable.into(), arguments))
     }
-    fn sync_titles(&mut self) {
+    fn sync_output_metadata(&mut self) -> bool {
+        let mut changed = false;
         for (pane_id, terminal) in &self.terminals {
-            let title = terminal.output.lock().unwrap().title.clone();
+            let output = terminal.output.lock().unwrap();
             if let Some(pane) = self.state.panes.get_mut(pane_id) {
-                pane.title = title;
+                if pane.title != output.title {
+                    logging::info(
+                        "pane.metadata.title",
+                        &format!("pane_id={pane_id} title={}", output.title),
+                    );
+                    pane.title = output.title.clone();
+                    changed = true;
+                }
+                if let Some(cwd) = &output.cwd {
+                    if Path::new(cwd).is_dir() && pane.current_working_directory != *cwd {
+                        logging::info("pane.metadata.cwd", &format!("pane_id={pane_id} cwd={cwd}"));
+                        pane.current_working_directory = cwd.clone();
+                        changed = true;
+                    }
+                }
             }
         }
+        changed
+    }
+    fn history_limit(&self) -> usize {
+        self.state
+            .settings
+            .get(TERMINAL_HISTORY_SETTING)
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| valid_history_limit(*value))
+            .unwrap_or(DEFAULT_TERMINAL_HISTORY_LINES)
+    }
+    fn mark_history_dirty(&mut self) {
+        for terminal in self.terminals.values() {
+            terminal.output.lock().unwrap().dirty = true;
+        }
+    }
+    pub fn flush_persistence(&mut self) -> Result<()> {
+        let metadata_changed = self.sync_output_metadata();
+        if metadata_changed {
+            logging::info("persistence.flush.metadata", "terminal metadata changed");
+            self.store.save(&self.state)?;
+        }
+        let history_limit = self.history_limit();
+        if history_limit == 0 {
+            self.store.clear_history()?;
+            return Ok(());
+        }
+        let mut pending = Vec::new();
+        for (pane_id, terminal) in &self.terminals {
+            let mut output = terminal.output.lock().unwrap();
+            if output.dirty {
+                pending.push((
+                    pane_id.clone(),
+                    history_snapshot(&mut output, history_limit),
+                ));
+            }
+        }
+        if !pending.is_empty() {
+            logging::info(
+                "persistence.flush.history",
+                &format!(
+                    "pending_panes={} history_limit={history_limit}",
+                    pending.len()
+                ),
+            );
+        }
+        for (pane_id, history) in pending {
+            self.store.save_history(&pane_id, &history)?;
+            if let Some(terminal) = self.terminals.get(&pane_id) {
+                terminal.output.lock().unwrap().dirty = false;
+            }
+        }
+        Ok(())
     }
     fn new_pane(&mut self, workspace_id: &str, tab_id: &str, value: &Value) -> Result<Pane> {
         let root = self.workspace(workspace_id)?.root_directory.clone();
@@ -122,6 +289,8 @@ impl Runtime {
             environment,
             initial_working_directory: root.clone(),
             current_working_directory: root,
+            terminal_rows: DEFAULT_TERMINAL_ROWS,
+            terminal_columns: DEFAULT_TERMINAL_COLUMNS,
             runtime_terminal_id: id(),
             pid: None,
             generation: id(),
@@ -153,9 +322,24 @@ impl Runtime {
         Ok(())
     }
     pub fn dispatch(&mut self, operation: &str, value: Value) -> Result<Value> {
-        self.sync_titles();
+        if self.sync_output_metadata() {
+            self.store.save(&self.state)?;
+        }
         match operation {
-            "workspace.list" | "state.get" => return Ok(serde_json::to_value(&self.state)?),
+            "workspace.list" | "state.get" => {
+                if operation == "workspace.list" {
+                    logging::info(
+                        "state.request.complete",
+                        &format!(
+                            "workspaces={} panes={} active_workspace={}",
+                            self.state.workspaces.len(),
+                            self.state.panes.len(),
+                            self.state.active_workspace_id.as_deref().unwrap_or("none")
+                        ),
+                    );
+                }
+                return Ok(serde_json::to_value(&self.state)?);
+            }
             "pane.sendInput" => {
                 let pane_id = required(&value, "paneId")?;
                 let data = value["data"]
@@ -168,6 +352,7 @@ impl Runtime {
                 return Ok(json!({}));
             }
             "terminal.resize" => {
+                let pane_id = required(&value, "paneId")?;
                 let rows = u16::try_from(
                     value["rows"]
                         .as_u64()
@@ -179,20 +364,58 @@ impl Runtime {
                         .ok_or_else(|| anyhow!("missing columns"))?,
                 )?;
                 self.terminals
-                    .get_mut(required(&value, "paneId")?)
+                    .get_mut(pane_id)
                     .ok_or_else(|| anyhow!("terminal unavailable"))?
                     .resize(rows, columns)?;
+                if let Some(pane) = self.state.panes.get_mut(pane_id) {
+                    pane.terminal_rows = rows;
+                    pane.terminal_columns = columns;
+                }
+                logging::info(
+                    "terminal.resize",
+                    &format!("pane_id={pane_id} rows={rows} columns={columns}"),
+                );
+                self.store.save(&self.state)?;
                 return Ok(json!({}));
+            }
+            "terminal.viewport.set" => {
+                let pane_id = required(&value, "paneId")?;
+                let offset = usize::try_from(
+                    value["offset"]
+                        .as_u64()
+                        .ok_or_else(|| anyhow!("missing offset"))?,
+                )?;
+                let actual = self
+                    .terminals
+                    .get_mut(pane_id)
+                    .ok_or_else(|| anyhow!("terminal unavailable"))?
+                    .set_viewport(offset);
+                logging::info(
+                    "terminal.viewport",
+                    &format!("pane_id={pane_id} requested_offset={offset} actual_offset={actual}"),
+                );
+                return Ok(json!({"viewportOffset": actual}));
             }
             _ => {}
         }
         let previous = self.state.clone();
         let mut launched = Vec::new();
+        let history_setting_changed =
+            operation == "settings.set" && value["key"].as_str() == Some(TERMINAL_HISTORY_SETTING);
         let result = self.mutate(operation, &value, &mut launched).and_then(|_| {
-            self.sync_titles();
-            self.store.save(&self.state)
+            self.sync_output_metadata();
+            self.store.save(&self.state)?;
+            if history_setting_changed {
+                self.mark_history_dirty();
+                self.flush_persistence()?;
+            }
+            Ok(())
         });
         if let Err(error) = result {
+            logging::error(
+                "state.mutation.failed",
+                &format!("operation={operation} error={error:#}"),
+            );
             self.state = previous;
             for pane_id in launched {
                 self.terminals.remove(&pane_id);
@@ -201,6 +424,15 @@ impl Runtime {
         }
         self.terminals
             .retain(|pane_id, _| self.state.panes.contains_key(pane_id));
+        logging::info(
+            "state.mutation.complete",
+            &format!(
+                "operation={operation} workspaces={} panes={} terminals={}",
+                self.state.workspaces.len(),
+                self.state.panes.len(),
+                self.terminals.len()
+            ),
+        );
         Ok(serde_json::to_value(&self.state)?)
     }
     fn mutate(&mut self, operation: &str, value: &Value, launched: &mut Vec<String>) -> Result<()> {
@@ -282,7 +514,7 @@ impl Runtime {
                     });
                     workspace.active_tab_id = Some(tab_id);
                 }
-                let terminal = Terminal::launch(&mut pane, &self.pipe)?;
+                let terminal = Terminal::launch(&mut pane, &self.pipe, None, self.history_limit())?;
                 launched.push(pane.id.clone());
                 self.terminals.insert(pane.id.clone(), terminal);
                 self.state.panes.insert(pane.id.clone(), pane);
@@ -346,6 +578,17 @@ fn shell_title(executable: &str) -> String {
         "bash" => "Git Bash".into(),
         "cmd" => "Command Prompt".into(),
         _ => name.into(),
+    }
+}
+
+fn valid_history_limit(value: usize) -> bool {
+    matches!(value, 0 | 500 | 2_000 | 5_000 | 10_000 | 25_000)
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        logging::info("runtime.drop", "flushing persistence before shutdown");
+        let _ = self.flush_persistence();
     }
 }
 

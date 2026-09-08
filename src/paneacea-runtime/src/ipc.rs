@@ -1,4 +1,4 @@
-use crate::runtime::Runtime;
+use crate::{logging, runtime::Runtime};
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
@@ -91,6 +91,9 @@ async fn connection(pipe: NamedPipeServer, runtime: Arc<Mutex<Runtime>>) -> Resu
         let request_id = request["id"].clone();
         let operation = request["method"].as_str().unwrap_or_default();
         let value = request["params"].clone();
+        if operation != "pane.sendInput" && operation != "state.get" {
+            logging::info("ipc.request", &format!("method={operation}"));
+        }
         if operation == "terminal.attach" {
             let pane_id = value["paneId"].as_str().unwrap_or_default();
             let output = runtime
@@ -100,6 +103,7 @@ async fn connection(pipe: NamedPipeServer, runtime: Arc<Mutex<Runtime>>) -> Resu
                 .get(pane_id)
                 .map(|terminal| terminal.output.clone());
             let Some(output) = output else {
+                logging::error("ipc.attach.unavailable", &format!("pane_id={pane_id}"));
                 write_frame(
                     &mut writer,
                     &json!({"id":request_id,"ok":false,"error":"terminal unavailable"}),
@@ -107,27 +111,52 @@ async fn connection(pipe: NamedPipeServer, runtime: Arc<Mutex<Runtime>>) -> Resu
                 .await?;
                 continue;
             };
-            let (mut receiver, snapshot, exited) = {
+            let (mut receiver, snapshot, exited, viewport_offset, restored) = {
                 let output = output.lock().unwrap();
                 (
                     output.sender.subscribe(),
                     output.parser.screen().state_formatted(),
                     output.exited,
+                    output.parser.screen().scrollback(),
+                    output.restored,
                 )
             };
-            write_frame(&mut writer, &json!({"id":request_id,"ok":true,"result":{"data":STANDARD.encode(snapshot),"exited":exited}})).await?;
+            logging::info(
+                "ipc.attach.result",
+                &format!(
+                    "pane_id={pane_id} snapshot_bytes={} exited={exited} viewport_offset={viewport_offset} restored={restored}",
+                    snapshot.len()
+                ),
+            );
+            write_frame(&mut writer, &json!({"id":request_id,"ok":true,"result":{"data":STANDARD.encode(snapshot),"exited":exited,"viewportOffset":viewport_offset,"restored":restored}})).await?;
             if exited {
+                logging::info(
+                    "ipc.attach.closed",
+                    &format!("pane_id={pane_id} terminal_already_exited=true"),
+                );
                 return Ok(());
             }
             loop {
                 tokio::select! {
-                    _ = read_frame(&mut reader) => return Ok(()),
+                    _ = read_frame(&mut reader) => {
+                        logging::info("ipc.attach.closed", &format!("pane_id={pane_id} client_detached=true"));
+                        return Ok(())
+                    },
                     event = receiver.recv() => {
                         let value = match event {
-                            Ok(data) if data.is_empty() => json!({"event":"terminal.exited","paneId":pane_id}),
+                            Ok(data) if data.is_empty() => {
+                                logging::info("ipc.terminal.exited", &format!("pane_id={pane_id}"));
+                                json!({"event":"terminal.exited","paneId":pane_id})
+                            },
                             Ok(data) => json!({"event":"pane.output","paneId":pane_id,"data":STANDARD.encode(data)}),
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return Err(anyhow!("slow terminal client; reconnect to recover screen")),
-                            Err(_) => return Ok(()),
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
+                                logging::error("ipc.attach.lagged", &format!("pane_id={pane_id} dropped_events={count}"));
+                                return Err(anyhow!("slow terminal client; reconnect to recover screen"))
+                            },
+                            Err(_) => {
+                                logging::info("ipc.attach.closed", &format!("pane_id={pane_id} output_channel_closed=true"));
+                                return Ok(())
+                            },
                         };
                         write_frame(&mut writer, &value).await?;
                         if value["event"] == "terminal.exited" { return Ok(()); }
@@ -144,8 +173,52 @@ async fn connection(pipe: NamedPipeServer, runtime: Arc<Mutex<Runtime>>) -> Resu
     Ok(())
 }
 pub async fn serve(name: &str, path: &std::path::Path) -> Result<()> {
+    let log_path = path.with_file_name("paneacea-runtime.log");
+    if let Err(error) = logging::init(&log_path) {
+        eprintln!(
+            "could not initialize runtime log {}: {error:#}",
+            log_path.display()
+        );
+    }
+    logging::info(
+        "runtime.start",
+        &format!(
+            "pipe={name} database={} log={}",
+            path.display(),
+            log_path.display()
+        ),
+    );
     let mut pipe = server(name, true)?;
-    let runtime = Arc::new(Mutex::new(Runtime::open(path, name.into())?));
+    let runtime = match Runtime::open(path, name.into()) {
+        Ok(runtime) => Arc::new(Mutex::new(runtime)),
+        Err(error) => {
+            logging::error("runtime.open.failed", &format!("error={error:#}"));
+            return Err(error);
+        }
+    };
+    {
+        let runtime = runtime.lock().unwrap();
+        logging::info(
+            "runtime.opened",
+            &format!(
+                "workspaces={} panes={} terminals={}",
+                runtime.state.workspaces.len(),
+                runtime.state.panes.len(),
+                runtime.terminals.len()
+            ),
+        );
+    }
+    let maintenance = runtime.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let result = maintenance.lock().unwrap().flush_persistence();
+            if let Err(error) = result {
+                logging::error("runtime.persistence.failed", &format!("error={error:#}"));
+                eprintln!("could not persist terminal state: {error:#}");
+            }
+        }
+    });
     loop {
         pipe.connect().await?;
         let connected = pipe;
@@ -153,6 +226,7 @@ pub async fn serve(name: &str, path: &std::path::Path) -> Result<()> {
         let runtime = runtime.clone();
         tokio::spawn(async move {
             if let Err(error) = connection(connected, runtime).await {
+                logging::error("ipc.connection.failed", &format!("error={error:#}"));
                 eprintln!("client disconnected: {error}");
             }
         });

@@ -1,4 +1,4 @@
-# Paneacea MVP protocol
+# Paneacea protocol
 
 Transport: local Windows named pipes, UTF-8 newline-delimited JSON, protocol version 1. Requests are limited to 1 MiB. Each request contains an opaque `id`, a `method`, and a `params` object. Method failures are returned without terminating the command connection.
 
@@ -30,7 +30,8 @@ The result shown above is illustrative; workspace creation returns the updated f
 | `pane.resize` | `tabId`, `path`, `ratio` | Full state |
 | `pane.sendInput` | `paneId`, `data` | Empty object |
 | `terminal.resize` | `paneId`, `rows`, `columns` | Empty object |
-| `terminal.attach` | `paneId` | Initial screen and then output events |
+| `terminal.attach` | `paneId` | Initial screen, restoration metadata, and then output events |
+| `terminal.viewport.set` | `paneId`, `offset` | Current scroll offset from the bottom |
 | `settings.set` | `key`, `value` | Full state |
 
 `tab.create` and `pane.split` accept optional `executable`, `arguments` (string array), and `environment` (string map). When `executable` is omitted, the runtime uses the persisted `settings.defaultShell` object. If no default is saved, it falls back to `powershell.exe` and `['-NoLogo']`. When selecting a different executable explicitly, provide its arguments, including `[]` if none. No command string is passed through an intermediate shell.
@@ -48,12 +49,22 @@ The supported UI profiles are `pwsh`, `powershell`, `git-bash`, and `cmd`. Exist
 An attach request uses a dedicated connection:
 
 ```json
-{"id":"attach","ok":true,"result":{"data":"BASE64_VT_BYTES","exited":false}}
+{"id":"attach","ok":true,"result":{"data":"BASE64_VT_BYTES","exited":false,"viewportOffset":0,"restored":false}}
 {"event":"pane.output","paneId":"...","data":"BASE64_VT_BYTES"}
 {"event":"terminal.exited","paneId":"..."}
 ```
 
 Base64 preserves arbitrary byte boundaries; clients need an incremental UTF-8 decoder. The snapshot and output subscription are established under one lock so output is neither lost nor duplicated across attachment. The runtime answers standard cursor/status/device-attribute queries itself, including when no client is attached. Closing this connection detaches; it does not kill the shell. Use another connection for input, resizing, and commands.
+
+`viewportOffset` is the current number of scrollback rows above the bottom of the pane. It is not persisted with terminal history. `restored` is true when the snapshot includes history from a previous runtime generation. The client should apply the viewport after its scrollbar has been populated.
+
+## Per-pane persistence
+
+Pane layout, launch configuration, current working directory, terminal dimensions, and saved terminal history are associated with the pane ID inside its tab. Saved history is encrypted with Windows DPAPI for the current Windows user. A restored pane opens at the live bottom of its terminal history; scroll position is not persisted. The `terminalHistoryLines` setting accepts `0`, `500`, `2000`, `5000`, `10000`, or `25000`; the default is `2000`, and `0` disables persisted history.
+
+Interactive PowerShell and Git Bash sessions emit OSC 7 working-directory notifications through temporary runtime-provided prompt integration. The runtime validates local paths and falls back to the last saved directory when integration is unavailable.
+
+When the runtime restarts, it restores the saved terminal snapshot and then launches a new shell in the saved directory. Shell variables, running jobs, and live full-screen application processes are not resumed. A restart divider is included in the restored terminal output.
 
 Example with PowerShell-generated JSON:
 

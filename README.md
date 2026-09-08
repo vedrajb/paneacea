@@ -38,7 +38,7 @@ Keep the entire output directory together: the renderer requires its managed and
 
 The WPF shell uses a dark, VS Code-inspired presentation: an activity bar, Explorer workspace list, terminal tabs, pane headers, command palette, and status bar. Use the Explorer to switch projects. Choose **Open Folder**, enter a workspace name, and provide an existing absolute directory. The workspace-root dialog includes **Browse…**, which opens the native Windows folder picker and writes the selected folder back into the path field. Use **+ New Tab**, **Split Right**, or **Split Down** to arrange terminals. Drag a divider to resize panes, and click a pane's header to focus it. Right-click a tab to rename or close it.
 
-**Command Palette** opens the searchable palette, using VS Code-style command names such as `Terminal: Split Right` and `Workspace: Change Workspace Folder`. Changing a workspace root affects future terminals; it does not change a running shell's directory.
+**Command Palette** opens the searchable palette, using VS Code-style command names such as `Terminal: Split Right` and `Workspace: Change Workspace Folder`. Changing a workspace root affects future terminals; it does not change a running shell's directory. Interactive PowerShell and Git Bash panes report their current folder so it can be restored independently per pane.
 
 Open **Preferences: Open Settings** to view the detected shell paths and choose **Default shell**. Paneacea stores the selected executable and arguments in the runtime settings record so new terminals use the same profile after restart.
 
@@ -70,7 +70,7 @@ Closing a pane, tab, or workspace terminates its shells and removes the correspo
 
 ## Persistence and runtime
 
-By default, Paneacea data lives in `%LOCALAPPDATA%\Paneacea\paneacea.db`, with SQLite WAL companion files. The per-user pipe is `paneacea-<sanitized username>`, with access restricted to the owning user and remote clients rejected. The renamed app starts with a fresh session store; previous sessions are not restored automatically.
+By default, Paneacea data lives in `%LOCALAPPDATA%\Paneacea\paneacea.db`, with SQLite WAL companion files. The per-user pipe is `paneacea-<sanitized username>`, with access restricted to the owning user and remote clients rejected. Layout and per-pane state are restored when the app reconnects to the same data directory and user-owned runtime.
 
 To keep development data inside this repository and isolate it from other instances:
 
@@ -91,7 +91,11 @@ Use one runtime per data directory. To shut it down, first close its workspaces 
 Two forms of persistence have different guarantees:
 
 - **GUI detach:** existing processes and their in-memory state survive. Reattachment reconstructs the current screen from a bounded runtime terminal model.
-- **Runtime restart or reboot:** saved layouts and launch commands are restored. Shell variables, running jobs, output history, and agent conversations are not restored.
+- **Runtime restart or reboot:** saved layouts, split ratios, pane folders, terminal dimensions, and encrypted terminal history are restored per pane. Panes reopen at the bottom of their restored history; scrollbar positions are not persisted. The shell process is relaunched in the saved folder; shell variables, running jobs, and live full-screen application processes are not resumed. A restart divider marks the transition.
+
+Saved terminal history is configured in Settings with Off, 500, 2,000, 5,000, 10,000, and 25,000-line presets. History is encrypted with Windows DPAPI for the current Windows user. Off removes persisted history while leaving the current runtime's in-memory terminal behavior available.
+
+When diagnosing restore problems, inspect `paneacea-runtime.log` beside `paneacea.db` and `paneacea-app.log` beside the application executable (or beside `PANEACEA_DATA` when that variable is set). Both logs include restore paths, state counts, pane IDs, history-row outcomes, and attach metadata, but never terminal input or saved terminal text. Set `PANEACEA_LOG` to override the application log path.
 
 ## Tests
 
@@ -99,7 +103,7 @@ Two forms of persistence have different guarantees:
 ./scripts/test.ps1
 ```
 
-The Rust tests cover layout edits, malformed IPC frames, SQLite round trips, terminal query handling, shell title mapping, and an integration test using real PowerShell/ConPTY sessions. The integration test exercises default-shell settings, detached output, stable process identity, nested splits, runtime restart, launch flags, and close operations. C# tests cover layout geometry, protocol handling, and shell discovery. An offscreen WPF smoke test loads the native renderer, opens and closes Settings, and exercises terminal input/output, splits, resizing, focus, tabs, reconnect, and window closure. It requires a Windows desktop session. Tests use unique pipe names and leave their databases under ignored `.data` directories for inspection.
+The Rust tests cover layout edits, malformed IPC frames, encrypted SQLite history round trips, terminal query and OSC 7 handling, shell title mapping, and integration tests using real PowerShell/ConPTY and Git Bash sessions. The integration tests exercise per-pane folders and history, live viewport behavior, default-shell settings, detached output, stable process identity, nested splits, runtime restart, launch flags, and close operations. C# tests cover layout geometry, protocol handling, shell discovery, and saved-history settings. An offscreen WPF smoke test loads the native renderer, opens and closes Settings, and exercises terminal input/output, splits, resizing, focus, tabs, reconnect, scrollbar behavior, and window closure. It requires a Windows desktop session. Tests use unique pipe names and leave their databases under ignored `.data` directories for inspection.
 
 ## Developer protocol CLI
 

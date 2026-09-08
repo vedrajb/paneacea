@@ -22,12 +22,15 @@ public partial class MainWindow : Window
     private const int DefaultTerminalFontSize = 11;
     private const int MinimumTerminalFontSize = 8;
     private const int MaximumTerminalFontSize = 32;
+    private const int DefaultTerminalHistoryLines = 2000;
+    private static readonly int[] TerminalHistoryChoices = [0, 500, 2000, 5000, 10000, 25000];
     private readonly RuntimeClient client = new(Environment.GetEnvironmentVariable("PANEACEA_PIPE"));
     private WorkspaceState state = new();
     private readonly Dictionary<string, TerminalControl> controls = [];
     private readonly Dictionary<string, Border> paneBorders = [];
     private readonly Dictionary<string, Button> paneHeaders = [];
     private readonly List<PipeTerminalConnection> connections = [];
+    private readonly HashSet<int> pressedModifierKeys = [];
     private readonly DispatcherTimer terminalStatusTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool updating;
     private bool busy;
@@ -46,6 +49,17 @@ public partial class MainWindow : Window
                 || setting.ValueKind != JsonValueKind.Number
                 || !setting.TryGetInt32(out var size)) return DefaultTerminalFontSize;
             return Math.Clamp(size, MinimumTerminalFontSize, MaximumTerminalFontSize);
+        }
+    }
+    private int TerminalHistoryLines
+    {
+        get
+        {
+            if (!state.Settings.TryGetValue("terminalHistoryLines", out var setting)
+                || setting.ValueKind != JsonValueKind.Number
+                || !setting.TryGetInt32(out var lines)
+                || !TerminalHistoryChoices.Contains(lines)) return DefaultTerminalHistoryLines;
+            return lines;
         }
     }
     private Brush ThemeBrush(string key) => (Brush)FindResource(key);
@@ -68,10 +82,15 @@ public partial class MainWindow : Window
             ?? shells.FirstOrDefault(shell => shell.IsAvailable);
     private static object ShellSetting(ShellProfile shell) => new { id = shell.Id, executable = shell.Executable, arguments = shell.Arguments };
     private sealed record CommandPaletteItem(string Label, string Shortcut);
+    private sealed record HistoryChoice(int Lines, string Label);
 
     public MainWindow()
     {
         InitializeComponent();
+        AppLogger.Initialize();
+        AppLogger.Info(
+            "app.start",
+            $"pipe={client.PipeName} base_directory={AppContext.BaseDirectory} data={Environment.GetEnvironmentVariable("PANEACEA_DATA") ?? "default"} log={AppLogger.LogPath}");
         SourceInitialized += (_, _) =>
         {
             windowSource = (HwndSource)PresentationSource.FromVisual(this)!;
@@ -89,17 +108,24 @@ public partial class MainWindow : Window
             await RefreshTerminalStatus();
         };
         ComponentDispatcher.ThreadPreprocessMessage += KeyMessage;
+        ComponentDispatcher.ThreadFilterMessage += TerminalNavigationMessage;
         Activated += (_, _) =>
         {
             if (!dialog && !showingSettings)
                 _ = Dispatcher.BeginInvoke(FocusActiveTerminal, DispatcherPriority.Input);
         };
+        Deactivated += (_, _) => pressedModifierKeys.Clear();
         StateChanged += (_, _) =>
         {
             MaximizeWindowButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
             MaximizeWindowButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
         };
-        Closed += (_, _) => { terminalStatusTimer.Stop(); ComponentDispatcher.ThreadPreprocessMessage -= KeyMessage; windowSource?.RemoveHook(WindowMessageFilter); Detach(); };
+        Closed += (_, _) =>
+        {
+            AppLogger.Info("app.closed", "window closed");
+            terminalStatusTimer.Stop(); ComponentDispatcher.ThreadPreprocessMessage -= KeyMessage; windowSource?.RemoveHook(WindowMessageFilter); Detach();
+            ComponentDispatcher.ThreadFilterMessage -= TerminalNavigationMessage;
+        };
     }
     private static IntPtr WindowMessageFilter(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -150,6 +176,8 @@ public partial class MainWindow : Window
     }
     [DllImport("user32.dll")]
     private static extern IntPtr GetFocus();
+    [DllImport("user32.dll", EntryPoint = "DispatchMessageW")]
+    private static extern IntPtr DispatchMessage(ref MSG message);
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsChild(IntPtr parent, IntPtr child);
@@ -165,25 +193,60 @@ public partial class MainWindow : Window
         if (busy) return;
         busy = true;
         try { await action(); }
-        catch (Exception error) { Report(error.Message); }
+        catch (Exception error)
+        {
+            AppLogger.Error("app.action.failed", $"error={error.Message}");
+            Report(error.Message);
+        }
         finally { busy = false; }
     }
-    private void Report(string message) => Dispatcher.BeginInvoke(() => Status.Text = message);
+    private void Report(string message)
+    {
+        AppLogger.Error("app.status", $"message={message}");
+        Dispatcher.BeginInvoke(() => Status.Text = message);
+    }
+    private static void LogState(string eventName, WorkspaceState value)
+    {
+        var paneDetails = string.Join(
+            ";",
+            value.Panes.Values
+                .OrderBy(pane => pane.Id)
+                .Select(pane => $"{pane.Id}:cwd={pane.CurrentWorkingDirectory}:exe={Path.GetFileName(pane.Executable)}"));
+        AppLogger.Info(
+            eventName,
+            $"workspaces={value.Workspaces.Count} tabs={value.Workspaces.Sum(workspace => workspace.Tabs.Count)} panes={value.Panes.Count} settings={value.Settings.Count} active_workspace={value.ActiveWorkspaceId ?? "none"} pane_details={paneDetails}");
+    }
     private async Task Initialize()
     {
-        try { state = await client.State(); }
+        AppLogger.Info("app.initialize.start", $"pipe={client.PipeName}");
+        try
+        {
+            state = await client.State();
+            LogState("app.state.loaded", state);
+        }
         catch (Exception error) when (error is TimeoutException or IOException or OperationCanceledException)
         {
+            AppLogger.Info("app.runtime.start", $"reason={error.Message}");
             var executable = Path.Combine(AppContext.BaseDirectory, "panacea-runtime.exe");
             if (!File.Exists(executable)) throw new FileNotFoundException("Build with scripts/build.ps1 so panacea-runtime.exe is beside Paneacea.App.exe.");
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
             start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(client.PipeName);
             if (Environment.GetEnvironmentVariable("PANEACEA_DATA") is { Length: > 0 } directory) { start.ArgumentList.Add("--data"); start.ArgumentList.Add(directory); }
             using var process = Process.Start(start);
+            AppLogger.Info("app.runtime.started", $"executable={executable} data={Environment.GetEnvironmentVariable("PANEACEA_DATA") ?? "default"}");
             for (var attempt = 0; ; attempt++)
             {
-                try { state = await client.State(); break; }
-                catch when (attempt < 4) { await Task.Delay(250); }
+                try
+                {
+                    state = await client.State();
+                    LogState("app.state.loaded_after_runtime_start", state);
+                    break;
+                }
+                catch (Exception retryError) when (attempt < 4)
+                {
+                    AppLogger.Error("app.runtime.wait", $"attempt={attempt + 1} error={retryError.Message}");
+                    await Task.Delay(250);
+                }
             }
         }
         await EnsureDefaultShell();
@@ -192,6 +255,7 @@ public partial class MainWindow : Window
             await Change("workspace.create", new { name = "Default", rootDirectory = Environment.CurrentDirectory }, false);
             await Change("tab.create", NewTabParameters(state.ActiveWorkspaceId!), false);
         }
+        LogState("app.initialize.complete", state);
         Render();
     }
     private async Task EnsureDefaultShell()
@@ -212,16 +276,22 @@ public partial class MainWindow : Window
     }
     private async Task Change(string method, object parameters, bool render = true)
     {
+        AppLogger.Info("app.change.start", $"method={method}");
         state = (await client.Call(method, parameters)).Deserialize<WorkspaceState>(RuntimeClient.JsonOptions)!;
+        LogState("app.change.complete", state);
         if (render) Render();
     }
     private void Detach()
     {
+        AppLogger.Info("app.terminals.detach", $"connections={connections.Count} controls={controls.Count}");
         foreach (var connection in connections) connection.Dispose();
         connections.Clear(); controls.Clear(); paneBorders.Clear(); paneHeaders.Clear(); PaneHost.Content = null;
     }
     private void Render()
     {
+        AppLogger.Info(
+            "app.render",
+            $"active_workspace={state.ActiveWorkspaceId ?? "none"} active_tab={ActiveTab?.Id ?? "none"} active_pane={ActiveTab?.ActivePaneId ?? "none"} panes={state.Panes.Count}");
         updating = true;
         WorkspaceList.ItemsSource = state.Workspaces;
         WorkspaceList.SelectedItem = ActiveWorkspace;
@@ -375,7 +445,7 @@ public partial class MainWindow : Window
                     FocusTerminal(control);
                 }
             };
-            control.Loaded += (_, _) => ConfigureScrollBar(control);
+            control.Loaded += (_, _) => ConfigureScrollBar(control, connection);
             control.PreviewMouseDown += async (_, _) =>
             {
                 SetPaneFocusVisual(pane.Id);
@@ -423,7 +493,7 @@ public partial class MainWindow : Window
         }
         var first = BuildLayout(node.First!, [.. path, 0]);
         var second = BuildLayout(node.Second!, [.. path, 1]);
-        var splitter = new GridSplitter { Background = ThemeBrush("BorderBrush"), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = vertical ? GridResizeDirection.Columns : GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext, ToolTip = "Drag to resize terminal panes" };
+        var splitter = new GridSplitter { Focusable = false, IsTabStop = false, Background = ThemeBrush("BorderBrush"), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = vertical ? GridResizeDirection.Columns : GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext, ToolTip = "Drag to resize terminal panes" };
         if (vertical) { Grid.SetColumn(splitter, 1); Grid.SetColumn(second, 2); }
         else { Grid.SetRow(splitter, 1); Grid.SetRow(second, 2); }
         splitter.DragCompleted += async (_, _) => await Run(async () =>
@@ -460,10 +530,15 @@ public partial class MainWindow : Window
         await Change("settings.set", new { key = "terminalFontSize", value = fontSize }, false);
         ApplyTerminalFontSize(fontSize);
     }
-    private void ConfigureScrollBar(TerminalControl control)
+    private void ConfigureScrollBar(TerminalControl control, PipeTerminalConnection connection)
     {
         var scrollbar = FindVisualChild<ScrollBar>(control);
-        if (scrollbar is null || scrollbar.Orientation != Orientation.Vertical) return;
+        if (scrollbar is null || scrollbar.Orientation != Orientation.Vertical)
+        {
+            AppLogger.Error("app.scrollbar.missing", $"pane_id={connection.PaneId}");
+            return;
+        }
+        AppLogger.Info("app.scrollbar.configure", $"pane_id={connection.PaneId} restored_viewport={connection.RestoredViewport?.ToString() ?? "none"}");
         const double indicatorWidth = 4;
         const double interactiveWidth = 16;
         scrollbar.Width = indicatorWidth;
@@ -471,6 +546,22 @@ public partial class MainWindow : Window
         scrollbar.Foreground = ThemeBrush("ScrollThumbBrush");
         scrollbar.BorderBrush = Brushes.Transparent;
         scrollbar.ApplyTemplate();
+        var applyingViewport = false;
+        var pendingViewport = 0UL;
+        var viewportTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        viewportTimer.Tick += (_, _) =>
+        {
+            viewportTimer.Stop();
+            connection.SetViewport(pendingViewport);
+        };
+        scrollbar.ValueChanged += (_, _) =>
+        {
+            if (applyingViewport) return;
+            var maximum = Math.Max(0, scrollbar.Maximum - scrollbar.ViewportSize);
+            pendingViewport = (ulong)Math.Max(0, Math.Round(maximum - scrollbar.Value));
+            viewportTimer.Stop();
+            viewportTimer.Start();
+        };
         void SetHoverState(bool hovered)
         {
             scrollbar.Width = hovered ? interactiveWidth : indicatorWidth;
@@ -487,6 +578,29 @@ public partial class MainWindow : Window
         scrollbar.MouseEnter += (_, _) => SetHoverState(true);
         scrollbar.MouseLeave += (_, _) => SetHoverState(false);
         SetHoverState(false);
+
+        void ApplyViewport(ulong offset, int attempt = 0)
+        {
+            var maximum = Math.Max(0, scrollbar.Maximum - scrollbar.ViewportSize);
+            if (offset > 0 && maximum == 0 && attempt < 60)
+            {
+                if (attempt == 0)
+                    AppLogger.Info("app.scrollbar.restore.waiting", $"pane_id={connection.PaneId} offset={offset}");
+                Dispatcher.BeginInvoke(() => ApplyViewport(offset, attempt + 1), DispatcherPriority.ContextIdle);
+                return;
+            }
+            applyingViewport = true;
+            scrollbar.Value = Math.Max(0, maximum - Math.Min((double)offset, maximum));
+            applyingViewport = false;
+            AppLogger.Info("app.scrollbar.restore.applied", $"pane_id={connection.PaneId} offset={offset} maximum={maximum} attempt={attempt}");
+        }
+        connection.ViewportRestored += offset =>
+        {
+            AppLogger.Info("app.scrollbar.restore.event", $"pane_id={connection.PaneId} offset={offset}");
+            Dispatcher.BeginInvoke(() => ApplyViewport(offset), DispatcherPriority.Loaded);
+        };
+        if (connection.RestoredViewport is { } restoredViewport)
+            Dispatcher.BeginInvoke(() => ApplyViewport(restoredViewport), DispatcherPriority.Loaded);
     }
     private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
     {
@@ -503,7 +617,12 @@ public partial class MainWindow : Window
     }
     private void FocusActiveTerminal()
     {
-        if (dialog || showingSettings || ActiveTab is not { } active || !controls.TryGetValue(active.ActivePaneId, out var control)) return;
+        if (dialog || showingSettings || ActiveTab is not { } active || !controls.TryGetValue(active.ActivePaneId, out var control))
+        {
+            AppLogger.Info("app.focus.startup.skipped", $"dialog={dialog} settings={showingSettings} active_tab={ActiveTab?.Id ?? "none"} active_pane={ActiveTab?.ActivePaneId ?? "none"}");
+            return;
+        }
+        AppLogger.Info("app.focus.startup", $"pane_id={active.ActivePaneId}");
         SetPaneFocusVisual(active.ActivePaneId);
         FocusTerminal(control);
     }
@@ -604,6 +723,25 @@ public partial class MainWindow : Window
         Grid.SetColumn(fontCombo, 1); fontGrid.Children.Add(fontCombo);
         fontSection.Child = fontGrid; content.Children.Add(fontSection);
 
+        var historySection = new Border { Background = ThemeBrush("PanelBackgroundBrush"), BorderBrush = ThemeBrush("BorderBrush"), BorderThickness = new Thickness(1), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 24) };
+        var historyGrid = new Grid();
+        historyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        historyGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var historyLabel = new StackPanel();
+        historyLabel.Children.Add(new TextBlock { Text = "Saved terminal history", FontSize = 14, Foreground = ThemeBrush("ForegroundBrush") });
+        historyLabel.Children.Add(new TextBlock { Text = "Encrypted for this Windows user and restored per pane after runtime restart", FontSize = 11, Foreground = ThemeBrush("MutedForegroundBrush"), Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
+        Grid.SetColumn(historyLabel, 0); historyGrid.Children.Add(historyLabel);
+        var historyChoices = TerminalHistoryChoices.Select(lines => new HistoryChoice(lines, lines == 0 ? "Off" : $"{lines:N0} lines")).ToArray();
+        var historyCombo = new ComboBox { Name = "TerminalHistoryLinesComboBox", ItemsSource = historyChoices, DisplayMemberPath = "Label", MinWidth = 120, ToolTip = "Choose how many terminal history lines are saved" };
+        historyCombo.SelectedItem = historyChoices.First(choice => choice.Lines == TerminalHistoryLines);
+        historyCombo.SelectionChanged += async (_, _) =>
+        {
+            if (historyCombo.SelectedItem is HistoryChoice choice && !busy)
+                await Run(() => SetTerminalHistoryLines(choice.Lines));
+        };
+        Grid.SetColumn(historyCombo, 1); historyGrid.Children.Add(historyCombo);
+        historySection.Child = historyGrid; content.Children.Add(historySection);
+
         content.Children.Add(new TextBlock { Text = "Detected shells", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = ThemeBrush("ForegroundBrush"), Margin = new Thickness(0, 0, 0, 10) });
         var detected = new Border { Background = ThemeBrush("PanelBackgroundBrush"), BorderBrush = ThemeBrush("BorderBrush"), BorderThickness = new Thickness(1), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 24) };
         var detectedPanel = new StackPanel();
@@ -628,6 +766,7 @@ public partial class MainWindow : Window
         return root;
     }
     private Task SetDefaultShell(ShellProfile shell) => Change("settings.set", new { key = "defaultShell", value = ShellSetting(shell) });
+    private Task SetTerminalHistoryLines(int lines) => Change("settings.set", new { key = "terminalHistoryLines", value = lines }, false);
     private object NewTabParameters(string workspaceId)
     {
         return DefaultShell is { } shell
@@ -742,11 +881,39 @@ public partial class MainWindow : Window
                 break;
         }
     }
+    private void TerminalNavigationMessage(ref MSG message, ref bool handled)
+    {
+        if (handled || !IsActive || dialog || showingSettings) return;
+        if (message.message is not (0x100 or 0x101) || message.wParam.ToInt64() is < 0x25 or > 0x28) return;
+        if (PressedModifierState(pressedModifierKeys) != ModifierKeys.None) return;
+        foreach (var control in controls.Values)
+        {
+            var container = FindVisualChild<TerminalContainer>(control);
+            if (container is null || message.hwnd != container.Handle || !HasTerminalFocus(control)) continue;
+            handled = true;
+            DispatchMessage(ref message);
+            return;
+        }
+    }
     private void KeyMessage(ref MSG message, ref bool handled)
     {
-        if (handled || !IsActive || dialog || message.message is not (0x100 or 0x104)) return;
+        if (message.message is not (0x100 or 0x101 or 0x104 or 0x105)) return;
+        var virtualKey = (int)message.wParam;
+        var keyDown = message.message is 0x100 or 0x104;
+        if (virtualKey is 0x10 or 0x11 or 0x12 or 0xA0 or 0xA1 or 0xA2 or 0xA3 or 0xA4 or 0xA5)
+        {
+            if (keyDown) pressedModifierKeys.Add(virtualKey);
+            else pressedModifierKeys.Remove(virtualKey);
+            return;
+        }
+        if (!keyDown || handled || !IsActive || dialog) return;
         var key = KeyInterop.KeyFromVirtualKey((int)message.wParam);
-        var modifiers = Keyboard.Modifiers;
+        var modifiers = PressedModifierState(pressedModifierKeys);
+        var controlDown = (modifiers & ModifierKeys.Control) != 0;
+        var altDown = (modifiers & ModifierKeys.Alt) != 0;
+        var shiftDown = (modifiers & ModifierKeys.Shift) != 0;
+        if (!HasShortcutModifier(controlDown, altDown, shiftDown)) return;
+        if (key is Key.Left or Key.Right or Key.Up or Key.Down && !altDown) return;
         string? action = null;
         if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) action = key switch { Key.T => "Terminal.NewTab", Key.W => "Terminal.ClosePane", Key.P => "Palette", _ => null };
         if (modifiers == ModifierKeys.Alt && key is Key.Left or Key.Right or Key.Up or Key.Down) action = "Terminal.MoveFocus" + key;
@@ -758,8 +925,22 @@ public partial class MainWindow : Window
         if (action is null) action = NewShortcutAction(key, modifiers);
         if (action is null) return;
         handled = true;
+        AppLogger.Info("app.shortcut", $"key={key} modifiers={modifiers} action={action}");
         var selected = action;
         Dispatcher.BeginInvoke(async () => { if (selected == "Palette") Commands(); else await Run(() => Execute(selected)); });
+    }
+    private static bool HasShortcutModifier(bool control, bool alt, bool shift) => control || alt || shift;
+    private static ModifierKeys PressedModifierState(IReadOnlySet<int> pressedKeys) => ModifierState(
+        pressedKeys.Contains(0x11) || pressedKeys.Contains(0xA2) || pressedKeys.Contains(0xA3),
+        pressedKeys.Contains(0x12) || pressedKeys.Contains(0xA4) || pressedKeys.Contains(0xA5),
+        pressedKeys.Contains(0x10) || pressedKeys.Contains(0xA0) || pressedKeys.Contains(0xA1));
+    private static ModifierKeys ModifierState(bool control, bool alt, bool shift)
+    {
+        var modifiers = ModifierKeys.None;
+        if (control) modifiers |= ModifierKeys.Control;
+        if (alt) modifiers |= ModifierKeys.Alt;
+        if (shift) modifiers |= ModifierKeys.Shift;
+        return modifiers;
     }
     private static string? NewShortcutAction(Key key, ModifierKeys modifiers) => modifiers switch
     {
