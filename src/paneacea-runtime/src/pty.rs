@@ -11,6 +11,7 @@ pub struct Output {
     pub parser: vt100::Parser,
     pub sender: broadcast::Sender<Vec<u8>>,
     pub exited: bool,
+    pub title: String,
 }
 pub struct Terminal {
     pub master: Box<dyn MasterPty + Send>,
@@ -32,9 +33,9 @@ impl Terminal {
         for (key, value) in &pane.environment {
             command.env(key, value);
         }
-        command.env("TINKERSHELL_PIPE", pipe);
-        command.env("TINKERSHELL_PANE_ID", &pane.id);
-        command.env("TINKERSHELL_WORKSPACE_ID", &pane.workspace_id);
+        command.env("PANEACEA_PIPE", pipe);
+        command.env("PANEACEA_PANE_ID", &pane.id);
+        command.env("PANEACEA_WORKSPACE_ID", &pane.workspace_id);
         let child = pair
             .slave
             .spawn_command(command)
@@ -50,6 +51,7 @@ impl Terminal {
             parser: vt100::Parser::new(30, 120, 2000),
             sender,
             exited: false,
+            title: pane.title.clone(),
         }));
         let thread_output = output.clone();
         let thread_writer = writer.clone();
@@ -61,7 +63,11 @@ impl Terminal {
                     Ok(0) | Err(_) => break,
                     Ok(count) => {
                         let mut output = thread_output.lock().unwrap();
-                        let (data, replies) = queries.process(&buffer[..count], &mut output.parser);
+                        let (data, replies, title) =
+                            queries.process_with_title(&buffer[..count], &mut output.parser);
+                        if let Some(title) = title {
+                            output.title = title;
+                        }
                         if !data.is_empty() {
                             let _ = output.sender.send(data);
                         }

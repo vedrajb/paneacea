@@ -1,3 +1,3 @@
 using System.Windows;
-namespace TinkerShell;
+namespace Paneacea;
 public partial class App : Application { }

@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-if (!(Test-Path Cargo.toml)) { throw 'Run this script from the tinkershell repository directory.' }
+if (!(Test-Path Cargo.toml)) { throw 'Run this script from the Paneacea repository directory.' }
 $env:CARGO_HOME = Join-Path $PWD '.cargo-home'
 $env:NUGET_PACKAGES = Join-Path $PWD '.packages'
 cargo test --workspace

@@ -146,6 +146,8 @@ pub struct Pane {
     pub tab_id: String,
     pub profile_id: String,
     pub executable: String,
+    #[serde(default)]
+    pub title: String,
     pub arguments: Vec<String>,
     pub environment: BTreeMap<String, String>,
     pub initial_working_directory: String,

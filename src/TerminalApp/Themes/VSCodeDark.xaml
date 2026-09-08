@@ -16,9 +16,8 @@
   <SolidColorBrush x:Key="ButtonHoverBrush" Color="#3A3D41"/>
   <SolidColorBrush x:Key="ButtonPressedBrush" Color="#094771"/>
   <SolidColorBrush x:Key="SelectionBrush" Color="#264F78"/>
-  <SolidColorBrush x:Key="ScrollTrackBrush" Color="#252526"/>
   <SolidColorBrush x:Key="ScrollThumbBrush" Color="#666666"/>
-  <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#C8C8C8"/>
+  <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#A6A6A6"/>
   <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#007ACC"/>
   <SolidColorBrush x:Key="TerminalBorderBrush" Color="#454545"/>
 
@@ -36,7 +35,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="{x:Type Button}">
           <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="2">
-            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True"/>
+            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="False"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ButtonHoverBrush}"/></Trigger>

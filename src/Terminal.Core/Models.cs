@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace TinkerShell.Core;
+namespace Paneacea.Core;
 
 public sealed class WorkspaceState
 {
@@ -31,6 +31,8 @@ public sealed class Pane
 {
     public string Id { get; set; } = "";
     public string Executable { get; set; } = "";
+    public string Title { get; set; } = "";
+    public List<string> Arguments { get; set; } = [];
     public string CurrentWorkingDirectory { get; set; } = "";
     public string? Error { get; set; }
 }

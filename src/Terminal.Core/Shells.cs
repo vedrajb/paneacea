@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace TinkerShell.Core;
+namespace Paneacea.Core;
 
 public sealed class ShellProfile
 {

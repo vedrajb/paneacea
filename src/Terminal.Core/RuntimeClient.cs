@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace TinkerShell.Core;
+namespace Paneacea.Core;
 
 public sealed class RuntimeClient(string? pipeName = null)
 {

@@ -11,19 +11,18 @@ Paneacea is a **personal open-source project intended for public use**. The repo
 Use the following naming split consistently:
 
 ```text
-GitHub repository / project slug:  tinkershell
+GitHub repository / project slug:  paneacea
 Product / display name:             Paneacea
-CLI / executable:                   tinkershell
-Optional short CLI alias:           tshell
+CLI / executable:                   paneacea
 ```
 
 Recommended GitHub repository URL shape:
 
 ```text
-github.com/<user-or-org>/tinkershell
+github.com/<user-or-org>/paneacea
 ```
 
-Use `Paneacea` in README headings, release notes, screenshots, UI chrome, documentation titles, and branding. Keep the existing lowercase `tinkershell` repository, package, and developer CLI identifiers for compatibility.
+Use `Paneacea` in README headings, release notes, screenshots, UI chrome, documentation titles, and branding. Keep the lowercase `paneacea` CLI and `paneacea-runtime` package identifiers where tooling requires them.
 
 ---
 
@@ -240,7 +239,7 @@ The visual system should be inspired by VS Code rather than reproduce its brandi
                   Named Pipe IPC
                        │
                        ▼
-               mux-runtime.exe
+               panacea-runtime.exe
                     Rust
                        │
        ┌───────────────┼────────────────┐
@@ -1064,7 +1063,7 @@ src/
 │   ├── Shells.cs
 │   └── ProtocolModels.cs
 │
-├── mux-runtime/
+├── paneacea-runtime/
 │   ├── src/
 │   │   ├── pty/
 │   │   ├── ipc/
@@ -1164,7 +1163,7 @@ At this point, restart should reconstruct the application layout.
 Move ConPTY ownership from the GUI into:
 
 ```text
-mux-runtime.exe
+panacea-runtime.exe
 ```
 
 Add:
@@ -1213,15 +1212,15 @@ Build a lightweight CLI against the same runtime protocol.
 Examples:
 
 ```text
-myterm workspace list
+paneacea workspace list
 
-myterm workspace switch Synapse
+paneacea workspace switch Synapse
 
-myterm tab create
+paneacea tab create
 
-myterm pane split --right
+paneacea pane split --right
 
-myterm agent list
+paneacea agent list
 ```
 
 ---
@@ -1241,7 +1240,7 @@ VS Code extension
 Agent/MCP integration
 ```
 
-The primary lightweight Windows client remains WPF. The existing public open-source repository remains `tinkershell`, while the application is presented as **Paneacea**.
+The primary lightweight Windows client remains WPF, and the public project is presented consistently as **Paneacea**.
 
 ---
 

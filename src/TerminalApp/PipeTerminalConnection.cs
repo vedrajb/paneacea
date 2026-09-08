@@ -3,9 +3,9 @@ using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
-using TinkerShell.Core;
+using Paneacea.Core;
 
-namespace TinkerShell;
+namespace Paneacea;
 
 public sealed class PipeTerminalConnection(RuntimeClient client, string paneId, Action<string> report) : ITerminalConnection, IDisposable
 {

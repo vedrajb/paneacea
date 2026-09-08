@@ -3,17 +3,44 @@ pub struct Queries {
     pending: Vec<u8>,
     string: bool,
     escape_in_string: bool,
+    osc_title: bool,
+    string_buffer: Vec<u8>,
 }
 impl Queries {
     pub fn process(&mut self, data: &[u8], parser: &mut vt100::Parser) -> (Vec<u8>, Vec<u8>) {
+        let (output, replies, _) = self.process_with_title(data, parser);
+        (output, replies)
+    }
+    pub fn process_with_title(
+        &mut self,
+        data: &[u8],
+        parser: &mut vt100::Parser,
+    ) -> (Vec<u8>, Vec<u8>, Option<String>) {
         let mut output = Vec::new();
         let mut replies = Vec::new();
+        let mut title = None;
         let mut parsed = 0;
         for &byte in data {
             if self.string {
+                let terminated = byte == 7 || (self.escape_in_string && byte == b'\\');
+                if self.osc_title {
+                    if terminated {
+                        if self.escape_in_string
+                            && byte == b'\\'
+                            && self.string_buffer.last() == Some(&27)
+                        {
+                            self.string_buffer.pop();
+                        }
+                        title = osc_title(&self.string_buffer);
+                    } else if self.string_buffer.len() < 4096 {
+                        self.string_buffer.push(byte);
+                    }
+                }
                 output.push(byte);
-                if byte == 7 || (self.escape_in_string && byte == b'\\') {
+                if terminated {
                     self.string = false;
+                    self.osc_title = false;
+                    self.string_buffer.clear();
                 }
                 self.escape_in_string = byte == 27;
                 continue;
@@ -31,9 +58,16 @@ impl Queries {
                 if byte == b'[' {
                     continue;
                 }
-                if [b']', b'P', b'X', b'^', b'_'].contains(&byte) {
+                if byte == b']' {
                     self.string = true;
+                    self.osc_title = true;
                     self.escape_in_string = false;
+                    self.string_buffer.clear();
+                } else if [b'P', b'X', b'^', b'_'].contains(&byte) {
+                    self.string = true;
+                    self.osc_title = false;
+                    self.escape_in_string = false;
+                    self.string_buffer.clear();
                 }
                 output.append(&mut self.pending);
                 continue;
@@ -67,8 +101,18 @@ impl Queries {
             }
         }
         parser.process(&output[parsed..]);
-        (output, replies)
+        (output, replies, title)
     }
+}
+fn osc_title(data: &[u8]) -> Option<String> {
+    let separator = data.iter().position(|byte| *byte == b';')?;
+    if !matches!(data.get(..separator), Some(b"0" | b"1" | b"2")) {
+        return None;
+    }
+    let title = String::from_utf8_lossy(&data[separator + 1..])
+        .trim()
+        .to_string();
+    (!title.is_empty()).then_some(title)
 }
 #[cfg(test)]
 mod tests {

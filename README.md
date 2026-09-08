@@ -1,21 +1,8 @@
 # Paneacea
 
-A Windows terminal workspace app with a native WPF interface and a persistent Rust runtime. This is the **MVP** of the [application plan](doc/plan.md).
+A Windows terminal workspace app with a native WPF interface and a persistent Rust runtime.
 
 The runtime owns the shells. Closing the app detaches the interface; reopening it reconnects to the same running sessions.
-
-## MVP features
-
-- PowerShell 7, Windows PowerShell, Git Bash, and Command Prompt terminals rendered by `Microsoft.Terminal.Wpf` when detected.
-- Create, switch, and rename tabs; close individual panes or entire tabs.
-- Nested horizontal and vertical splits, draggable dividers, directional focus, and keyboard resizing.
-- Create, switch, rename, and close workspaces with their own root directories.
-- New tabs and split panes start in their workspace root.
-- SQLite persistence for workspace names, roots, tabs, layouts, active selections, and complete launch commands.
-- A Settings panel that detects supported shells and selects the default for new tabs and split panes.
-- Restore layouts and relaunch shells after a runtime restart.
-- Named-pipe input/output streaming and live session reattachment.
-- Searchable command palette and a small protocol CLI for development.
 
 ## Requirements
 
@@ -36,7 +23,7 @@ Run from the repository directory in PowerShell:
 & ./src/TerminalApp/bin/Debug/net9.0-windows/win-x64/Paneacea.App.exe
 ```
 
-The build script builds both components and places `mux-runtime.exe` and `tinkershell.exe` beside the GUI. The app starts the runtime automatically if it is not running. The first launch creates a Default workspace rooted at the launch working directory.
+The build script builds both components and places the runtime and protocol CLI beside the GUI. The app starts the runtime automatically if it is not running. The first launch creates a Default workspace rooted at the launch working directory.
 
 For an optimized build:
 
@@ -45,7 +32,7 @@ For an optimized build:
 & ./src/TerminalApp/bin/Release/net9.0-windows/win-x64/Paneacea.App.exe
 ```
 
-Keep the entire output directory together: the renderer requires its managed and native libraries. The GUI executable is `Paneacea.App.exe`; the developer CLI remains `tinkershell.exe`. Separate filenames avoid Windows' case-insensitive filename collision.
+Keep the entire output directory together: the renderer requires its managed and native libraries. The GUI executable is `Paneacea.App.exe`; the output directory also contains the runtime and protocol CLI. Separate filenames avoid Windows' case-insensitive filename collision.
 
 ## Using the app
 
@@ -65,6 +52,10 @@ Open **Preferences: Open Settings** to view the detected shell paths and choose 
 | Ctrl+T | New tab |
 | Ctrl+W | Close current tab |
 | Ctrl+N | New workspace |
+| Ctrl+\` | Focus terminal pane |
+| Ctrl++ | Increase terminal font size |
+| Ctrl+- | Decrease terminal font size |
+| Ctrl+Mouse Wheel | Change terminal font size |
 | Ctrl+? | Keyboard shortcuts popup |
 | Ctrl+Shift+T | New tab |
 | Ctrl+Shift+W | Close focused pane |
@@ -92,7 +83,7 @@ $env:PANEACEA_PIPE = 'paneacea-dev'
 You can also start the runtime directly:
 
 ```powershell
-./target/debug/mux-runtime.exe --pipe paneacea-dev --data .data/dev
+./target/debug/panacea-runtime.exe --pipe paneacea-dev --data .data/dev
 ```
 
 Use one runtime per data directory. To shut it down, first close its workspaces if you want to end and forget their sessions, then end that runtime process. Ending the runtime with saved workspaces still present causes those shells to be relaunched next time. The runtime does not automatically stop when the final window closes.
@@ -110,16 +101,16 @@ Two forms of persistence have different guarantees:
 
 The Rust tests cover layout edits, malformed IPC frames, SQLite round trips, terminal query handling, shell title mapping, and an integration test using real PowerShell/ConPTY sessions. The integration test exercises default-shell settings, detached output, stable process identity, nested splits, runtime restart, launch flags, and close operations. C# tests cover layout geometry, protocol handling, and shell discovery. An offscreen WPF smoke test loads the native renderer, opens and closes Settings, and exercises terminal input/output, splits, resizing, focus, tabs, reconnect, and window closure. It requires a Windows desktop session. Tests use unique pipe names and leave their databases under ignored `.data` directories for inspection.
 
-## Developer CLI
+## Developer protocol CLI
 
 With the runtime running:
 
 ```powershell
-./target/debug/tinkershell.exe workspace.list
-./target/debug/tinkershell.exe --pipe paneacea-dev state.get
+./target/debug/paneacea.exe workspace.list
+./target/debug/paneacea.exe --pipe paneacea-dev state.get
 ```
 
-The CLI accepts a protocol method and an optional JSON object. See [doc/protocol.md](doc/protocol.md) for request fields and examples. This MVP CLI is a development tool; the friendlier `tinkershell workspace list` syntax belongs to a later phase.
+The CLI accepts a protocol method and an optional JSON object. See [doc/protocol.md](doc/protocol.md) for request fields and examples.
 
 ## Architecture
 
@@ -128,7 +119,7 @@ Paneacea.App.exe (WPF + Microsoft.Terminal.Wpf)
                   |
           per-user named pipe
                   |
-       mux-runtime.exe (Rust + Tokio)
+       panacea-runtime.exe (Rust + Tokio)
             |                 |
       portable-pty          SQLite
           ConPTY
@@ -136,15 +127,6 @@ Paneacea.App.exe (WPF + Microsoft.Terminal.Wpf)
         pwsh / Windows PowerShell / Git Bash / cmd
 ```
 
-`src/Terminal.Core` contains C# protocol models, the pipe client, layout geometry, and Windows shell discovery. `src/TerminalApp` contains the WPF client. `src/mux-runtime` contains the runtime, SQLite store, split tree, terminal model, and developer CLI. The GUI creates render controls only for the selected tab; hidden panes remain runtime sessions.
-
-## MVP limits and next steps
-
-- Agent detection, hooks, session resume, and agent status indicators are deferred.
-- Automatic current-directory tracking, terminal-driven tab titles, advanced profile editing, tab reordering, and imported keybindings are deferred. Restart currently uses each pane's saved launch directory.
-- Live output scrolls normally, but reattachment restores the current screen, not the complete scrollback. The runtime's VT model does not support every Windows Terminal extension; advanced terminal graphics and uncommon query sequences are not guaranteed.
-- Use one GUI client per runtime for now. Layout updates from other clients are not pushed automatically; **Terminal.Reconnect** refreshes the view.
-- A slow output client is disconnected to bound memory. Use **Terminal.Reconnect** to attach again. After a runtime failure, relaunch the app to start it again.
-- Resource usage has not been benchmarked. Installers, auto-update, optional clients, and a public release license are outside this MVP.
+`src/Terminal.Core` contains C# protocol models, the pipe client, layout geometry, and Windows shell discovery. `src/TerminalApp` contains the WPF client. `src/paneacea-runtime` contains the runtime, SQLite store, split tree, terminal model, and developer CLI. The runtime binary is `panacea-runtime.exe`. The GUI creates render controls only for the selected tab; hidden panes remain runtime sessions.
 
 The full roadmap remains in [doc/plan.md](doc/plan.md).

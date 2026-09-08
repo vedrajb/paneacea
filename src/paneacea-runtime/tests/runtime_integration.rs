@@ -1,6 +1,7 @@
 #![cfg(windows)]
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use paneacea_runtime::ipc::{call, read_frame, write_frame};
 use serde_json::{json, Value};
 use std::{
     os::windows::process::CommandExt,
@@ -8,7 +9,6 @@ use std::{
     process::{Child, Command},
     time::Duration,
 };
-use tinkershell_runtime::ipc::{call, read_frame, write_frame};
 use tokio::{io::BufReader, net::windows::named_pipe::ClientOptions};
 
 struct Daemon(Child);
@@ -20,7 +20,7 @@ impl Drop for Daemon {
 }
 async fn start(name: &str, directory: &Path) -> Result<Daemon> {
     let daemon = Daemon(
-        Command::new(env!("CARGO_BIN_EXE_mux-runtime"))
+        Command::new(env!("CARGO_BIN_EXE_panacea-runtime"))
             .args(["--pipe", name, "--data"])
             .arg(directory)
             .creation_flags(0x08000000)
@@ -51,7 +51,7 @@ async fn snapshot(name: &str, pane_id: &str) -> Result<String> {
 
 #[tokio::test]
 async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
-    let name = format!("tinkershell-test-{}", uuid::Uuid::new_v4());
+    let name = format!("paneacea-test-{}", uuid::Uuid::new_v4());
     let root = std::env::current_dir()?;
     let directory = root.join(".data").join(&name);
     std::fs::create_dir_all(&directory)?;

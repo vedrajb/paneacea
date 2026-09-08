@@ -1,5 +1,5 @@
 using System.Text.Json;
-using TinkerShell.Core;
+using Paneacea.Core;
 
 var tests = new (string Name, Action Test)[]
 {

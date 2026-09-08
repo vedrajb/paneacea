@@ -1,6 +1,7 @@
 using Microsoft.Terminal.Wpf;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,24 +10,44 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using TinkerShell.Core;
+using System.Windows.Threading;
+using Paneacea.Core;
 
-namespace TinkerShell;
+namespace Paneacea;
 
 public partial class MainWindow : Window
 {
-    private readonly RuntimeClient client = new(Environment.GetEnvironmentVariable("PANEACEA_PIPE") ?? Environment.GetEnvironmentVariable("TINKERSHELL_PIPE"));
+    private const int WmGetMinMaxInfo = 0x0024;
+    private const uint MonitorDefaultToNearest = 0x00000002;
+    private const int DefaultTerminalFontSize = 11;
+    private const int MinimumTerminalFontSize = 8;
+    private const int MaximumTerminalFontSize = 32;
+    private readonly RuntimeClient client = new(Environment.GetEnvironmentVariable("PANEACEA_PIPE"));
     private WorkspaceState state = new();
     private readonly Dictionary<string, TerminalControl> controls = [];
     private readonly Dictionary<string, Border> paneBorders = [];
+    private readonly Dictionary<string, Button> paneHeaders = [];
     private readonly List<PipeTerminalConnection> connections = [];
+    private readonly DispatcherTimer terminalStatusTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool updating;
     private bool busy;
+    private bool refreshingTerminalStatus;
     private bool dialog;
     private bool showingSettings;
     private IReadOnlyList<ShellProfile> shells = [];
+    private HwndSource? windowSource;
     private Workspace? ActiveWorkspace => state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
     private Tab? ActiveTab => ActiveWorkspace?.Tabs.FirstOrDefault(t => t.Id == ActiveWorkspace.ActiveTabId);
+    private int TerminalFontSize
+    {
+        get
+        {
+            if (!state.Settings.TryGetValue("terminalFontSize", out var setting)
+                || setting.ValueKind != JsonValueKind.Number
+                || !setting.TryGetInt32(out var size)) return DefaultTerminalFontSize;
+            return Math.Clamp(size, MinimumTerminalFontSize, MaximumTerminalFontSize);
+        }
+    }
     private Brush ThemeBrush(string key) => (Brush)FindResource(key);
     private string? ConfiguredShellId
     {
@@ -51,15 +72,94 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await Run(Initialize);
+        SourceInitialized += (_, _) =>
+        {
+            windowSource = (HwndSource)PresentationSource.FromVisual(this)!;
+            windowSource.AddHook(WindowMessageFilter);
+        };
+        Loaded += async (_, _) =>
+        {
+            await Run(Initialize);
+            terminalStatusTimer.Start();
+            _ = Dispatcher.BeginInvoke(FocusActiveTerminal, DispatcherPriority.ApplicationIdle);
+        };
+        terminalStatusTimer.Tick += async (_, _) =>
+        {
+            await SyncPaneFocus();
+            await RefreshTerminalStatus();
+        };
         ComponentDispatcher.ThreadPreprocessMessage += KeyMessage;
+        Activated += (_, _) =>
+        {
+            if (!dialog && !showingSettings)
+                _ = Dispatcher.BeginInvoke(FocusActiveTerminal, DispatcherPriority.Input);
+        };
         StateChanged += (_, _) =>
         {
             MaximizeWindowButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
             MaximizeWindowButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
         };
-        Closed += (_, _) => { ComponentDispatcher.ThreadPreprocessMessage -= KeyMessage; Detach(); };
+        Closed += (_, _) => { terminalStatusTimer.Stop(); ComponentDispatcher.ThreadPreprocessMessage -= KeyMessage; windowSource?.RemoveHook(WindowMessageFilter); Detach(); };
     }
+    private static IntPtr WindowMessageFilter(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != WmGetMinMaxInfo) return IntPtr.Zero;
+        var maxInfo = Marshal.PtrToStructure<NativeMinMaxInfo>(lParam);
+        var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero) return IntPtr.Zero;
+        var monitorInfo = new NativeMonitorInfo { Size = Marshal.SizeOf<NativeMonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref monitorInfo)) return IntPtr.Zero;
+        maxInfo.MaxPosition.X = monitorInfo.Work.Left - monitorInfo.Monitor.Left;
+        maxInfo.MaxPosition.Y = monitorInfo.Work.Top - monitorInfo.Monitor.Top;
+        maxInfo.MaxSize.X = monitorInfo.Work.Right - monitorInfo.Work.Left;
+        maxInfo.MaxSize.Y = monitorInfo.Work.Bottom - monitorInfo.Work.Top;
+        Marshal.StructureToPtr(maxInfo, lParam, false);
+        handled = true;
+        return IntPtr.Zero;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMinMaxInfo
+    {
+        public NativePoint Reserved;
+        public NativePoint MaxSize;
+        public NativePoint MaxPosition;
+        public NativePoint MinTrackSize;
+        public NativePoint MaxTrackSize;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMonitorInfo
+    {
+        public int Size;
+        public NativeRect Monitor;
+        public NativeRect Work;
+        public uint Flags;
+    }
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetFocus();
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsChild(IntPtr parent, IntPtr child);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hwnd);
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref NativeMonitorInfo monitorInfo);
     private async Task Run(Func<Task> action)
     {
         if (busy) return;
@@ -74,11 +174,11 @@ public partial class MainWindow : Window
         try { state = await client.State(); }
         catch (Exception error) when (error is TimeoutException or IOException or OperationCanceledException)
         {
-            var executable = Path.Combine(AppContext.BaseDirectory, "mux-runtime.exe");
-            if (!File.Exists(executable)) throw new FileNotFoundException("Build with scripts/build.ps1 so mux-runtime.exe is beside Paneacea.App.exe.");
+            var executable = Path.Combine(AppContext.BaseDirectory, "panacea-runtime.exe");
+            if (!File.Exists(executable)) throw new FileNotFoundException("Build with scripts/build.ps1 so panacea-runtime.exe is beside Paneacea.App.exe.");
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
             start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(client.PipeName);
-            if ((Environment.GetEnvironmentVariable("PANEACEA_DATA") ?? Environment.GetEnvironmentVariable("TINKERSHELL_DATA")) is { Length: > 0 } directory) { start.ArgumentList.Add("--data"); start.ArgumentList.Add(directory); }
+            if (Environment.GetEnvironmentVariable("PANEACEA_DATA") is { Length: > 0 } directory) { start.ArgumentList.Add("--data"); start.ArgumentList.Add(directory); }
             using var process = Process.Start(start);
             for (var attempt = 0; ; attempt++)
             {
@@ -118,7 +218,7 @@ public partial class MainWindow : Window
     private void Detach()
     {
         foreach (var connection in connections) connection.Dispose();
-        connections.Clear(); controls.Clear(); paneBorders.Clear(); PaneHost.Content = null;
+        connections.Clear(); controls.Clear(); paneBorders.Clear(); paneHeaders.Clear(); PaneHost.Content = null;
     }
     private void Render()
     {
@@ -156,11 +256,81 @@ public partial class MainWindow : Window
         else if (ActiveTab is { } active)
         {
             PaneHost.Content = BuildLayout(active.RootLayoutNode, []);
-            Dispatcher.BeginInvoke(() => { if (controls.TryGetValue(active.ActivePaneId, out var control)) control.Focus(); });
+            _ = Dispatcher.BeginInvoke(FocusActiveTerminal, DispatcherPriority.ApplicationIdle);
         }
         else PaneHost.Content = new TextBlock { Text = "Open a workspace folder or create a new terminal tab to start.", Margin = new Thickness(30), Foreground = ThemeBrush("MutedForegroundBrush") };
         Status.Text = ActiveWorkspace is { } workspace ? $"{workspace.Name}  ·  {workspace.RootDirectory}  ·  {DefaultShell?.Name ?? "No shell"}" : "No workspace open";
         RuntimeState.Text = "Runtime · Connected";
+    }
+    private async Task RefreshTerminalStatus()
+    {
+        if (busy || refreshingTerminalStatus || showingSettings || state.Workspaces.Count == 0) return;
+        refreshingTerminalStatus = true;
+        try
+        {
+            var refreshed = await client.State();
+            var previousWorkspace = ActiveWorkspace;
+            var refreshedWorkspace = refreshed.Workspaces.FirstOrDefault(workspace => workspace.Id == refreshed.ActiveWorkspaceId);
+            if (previousWorkspace?.Id != refreshedWorkspace?.Id
+                || previousWorkspace is not null && refreshedWorkspace is null
+                || previousWorkspace is null && refreshedWorkspace is not null
+                || previousWorkspace is not null && refreshedWorkspace is not null
+                    && !previousWorkspace.Tabs.Select(tab => tab.Id).SequenceEqual(refreshedWorkspace.Tabs.Select(tab => tab.Id)))
+            {
+                state = refreshed;
+                Render();
+                return;
+            }
+            state = refreshed;
+            UpdateTerminalStatusVisuals();
+        }
+        catch (Exception error) when (error is TimeoutException or IOException or OperationCanceledException)
+        {
+        }
+        finally
+        {
+            refreshingTerminalStatus = false;
+        }
+    }
+    private void UpdateTerminalStatusVisuals()
+    {
+        foreach (var paneHeader in paneHeaders)
+        {
+            if (state.Panes.TryGetValue(paneHeader.Key, out var pane))
+            {
+                paneHeader.Value.Content = TerminalHeader(pane);
+                paneHeader.Value.ToolTip = TerminalToolTip(pane);
+            }
+        }
+    }
+    private static string TerminalHeader(Pane pane)
+    {
+        var title = string.IsNullOrWhiteSpace(pane.Title) ? Path.GetFileName(pane.Executable) : pane.Title;
+        var commandOrApp = IsShellTitle(pane, title) ? Path.GetFileName(pane.Executable) : title;
+        return $"{FolderName(pane.CurrentWorkingDirectory)} | {commandOrApp}";
+    }
+    private static string FolderName(string directory)
+    {
+        var trimmed = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? directory : name;
+    }
+    private static bool IsShellTitle(Pane pane, string title)
+    {
+        var executable = Path.GetFileName(pane.Executable);
+        var executableName = Path.GetFileNameWithoutExtension(executable);
+        return title.Equals("PowerShell", StringComparison.OrdinalIgnoreCase)
+            || title.Equals("Git Bash", StringComparison.OrdinalIgnoreCase)
+            || title.Equals("Command Prompt", StringComparison.OrdinalIgnoreCase)
+            || title.Equals(executable, StringComparison.OrdinalIgnoreCase)
+            || title.Equals(pane.Executable, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(executableName) && title.Contains(executableName, StringComparison.OrdinalIgnoreCase);
+    }
+    private static string TerminalToolTip(Pane pane)
+    {
+        var command = string.Join(" ", new[] { Path.GetFileName(pane.Executable) }.Concat(pane.Arguments));
+        var title = string.IsNullOrWhiteSpace(pane.Title) ? Path.GetFileName(pane.Executable) : pane.Title;
+        return $"{title}\n{command}\n{pane.CurrentWorkingDirectory}";
     }
     private UIElement BuildLayout(LayoutNode node, int[] path)
     {
@@ -170,7 +340,7 @@ public partial class MainWindow : Window
             var panel = new DockPanel();
             var header = new Button
             {
-                Content = $"TERMINAL  {Path.GetFileName(pane.Executable)}",
+                Content = TerminalHeader(pane),
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(10, 3, 10, 3),
                 Margin = new Thickness(0),
@@ -178,9 +348,10 @@ public partial class MainWindow : Window
                 Foreground = ThemeBrush("MutedForegroundBrush"),
                 BorderBrush = ThemeBrush("BorderBrush"),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                ToolTip = pane.CurrentWorkingDirectory
+                ToolTip = TerminalToolTip(pane)
             };
             DockPanel.SetDock(header, Dock.Top); panel.Children.Add(header);
+            paneHeaders[pane.Id] = header;
             header.Click += async (_, _) => await Run(() => FocusPane(pane.Id));
             if (pane.Error is not null) { panel.Children.Add(new TextBlock { Text = pane.Error, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(15), Foreground = ThemeBrush("ErrorBrush") }); return panel; }
             var control = new TerminalControl { Focusable = true };
@@ -195,15 +366,32 @@ public partial class MainWindow : Window
                 Child = panel
             };
             paneBorders[pane.Id] = border;
-            control.Loaded += (_, _) => control.SetTheme(new TerminalTheme
+            control.Loaded += (_, _) =>
             {
-                DefaultBackground = 0x1E1E1E, DefaultForeground = 0xCCCCCC, DefaultSelectionBackground = 0x784F26,
-                CursorStyle = CursorStyle.BlinkingBar,
-                ColorTable = [0x0C0C0C, 0x1F0FC5, 0x0EA113, 0x009CC1, 0xDA3700, 0x981788, 0xDD963A, 0xCCCCCC, 0x767676, 0x5648E7, 0x0CC616, 0xA5F1F9, 0xFF783B, 0x9E00B4, 0xD6D661, 0xF2F2F2]
-            }, "Cascadia Mono", 13);
+                ApplyTerminalTheme(control, TerminalFontSize);
+                if (ActiveTab?.ActivePaneId == pane.Id)
+                {
+                    SetPaneFocusVisual(pane.Id);
+                    FocusTerminal(control);
+                }
+            };
             control.Loaded += (_, _) => ConfigureScrollBar(control);
-            control.GotFocus += async (_, _) =>
+            control.PreviewMouseDown += async (_, _) =>
             {
+                SetPaneFocusVisual(pane.Id);
+                FocusTerminal(control);
+                if (ActiveTab?.ActivePaneId == pane.Id || busy) return;
+                await Run(() => FocusPane(pane.Id));
+            };
+            control.PreviewMouseWheel += async (_, e) =>
+            {
+                if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+                e.Handled = true;
+                await Run(() => AdjustTerminalFontSize(e.Delta > 0 ? 1 : -1));
+            };
+            control.IsKeyboardFocusWithinChanged += async (_, _) =>
+            {
+                if (!control.IsKeyboardFocusWithin) return;
                 SetPaneFocusVisual(pane.Id);
                 if (ActiveTab?.ActivePaneId == pane.Id || busy) return;
                 await Run(() => Change("pane.focus", new { paneId = pane.Id }, false));
@@ -250,14 +438,36 @@ public partial class MainWindow : Window
         grid.Children.Add(first); grid.Children.Add(second); grid.Children.Add(splitter);
         return grid;
     }
+    private void ApplyTerminalTheme(TerminalControl control, int fontSize)
+    {
+        control.SetTheme(new TerminalTheme
+        {
+            DefaultBackground = 0x1E1E1E, DefaultForeground = 0xCCCCCC, DefaultSelectionBackground = 0x784F26,
+            CursorStyle = CursorStyle.BlinkingBar,
+            ColorTable = [0x0C0C0C, 0x1F0FC5, 0x0EA113, 0x009CC1, 0xDA3700, 0x981788, 0xDD963A, 0xCCCCCC, 0x767676, 0x5648E7, 0x0CC616, 0xA5F1F9, 0xFF783B, 0x9E00B4, 0xD6D661, 0xF2F2F2]
+        }, "Cascadia Mono", (short)fontSize);
+    }
+    private void ApplyTerminalFontSize(int fontSize)
+    {
+        foreach (var control in controls.Values)
+            if (control.IsLoaded) ApplyTerminalTheme(control, fontSize);
+    }
+    private Task AdjustTerminalFontSize(int delta) => SetTerminalFontSize(TerminalFontSize + delta);
+    private async Task SetTerminalFontSize(int fontSize)
+    {
+        fontSize = Math.Clamp(fontSize, MinimumTerminalFontSize, MaximumTerminalFontSize);
+        if (fontSize == TerminalFontSize) return;
+        await Change("settings.set", new { key = "terminalFontSize", value = fontSize }, false);
+        ApplyTerminalFontSize(fontSize);
+    }
     private void ConfigureScrollBar(TerminalControl control)
     {
         var scrollbar = FindVisualChild<ScrollBar>(control);
         if (scrollbar is null || scrollbar.Orientation != Orientation.Vertical) return;
-        const double indicatorWidth = 5;
-        const double interactiveWidth = 14;
+        const double indicatorWidth = 4;
+        const double interactiveWidth = 16;
         scrollbar.Width = indicatorWidth;
-        scrollbar.Background = ThemeBrush("ScrollTrackBrush");
+        scrollbar.Background = Brushes.Transparent;
         scrollbar.Foreground = ThemeBrush("ScrollThumbBrush");
         scrollbar.BorderBrush = Brushes.Transparent;
         scrollbar.ApplyTemplate();
@@ -269,7 +479,10 @@ public partial class MainWindow : Window
                 thumb.Background = ThemeBrush(hovered ? "ScrollThumbHoverBrush" : "ScrollThumbBrush");
                 thumb.BorderBrush = Brushes.Transparent;
                 thumb.Cursor = Cursors.Hand;
+                thumb.Opacity = hovered ? 1 : 0.65;
             }
+            foreach (var button in FindVisualChildren<RepeatButton>(scrollbar))
+                button.Visibility = Visibility.Collapsed;
         }
         scrollbar.MouseEnter += (_, _) => SetHoverState(true);
         scrollbar.MouseLeave += (_, _) => SetHoverState(false);
@@ -281,6 +494,48 @@ public partial class MainWindow : Window
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
             if (FindVisualChild<T>(VisualTreeHelper.GetChild(root, index)) is { } child) return child;
         return null;
+    }
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T match) yield return match;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            foreach (var child in FindVisualChildren<T>(VisualTreeHelper.GetChild(root, index))) yield return child;
+    }
+    private void FocusActiveTerminal()
+    {
+        if (dialog || showingSettings || ActiveTab is not { } active || !controls.TryGetValue(active.ActivePaneId, out var control)) return;
+        SetPaneFocusVisual(active.ActivePaneId);
+        FocusTerminal(control);
+    }
+    private async Task SyncPaneFocus()
+    {
+        if (showingSettings || busy) return;
+        foreach (var control in controls)
+            if (HasTerminalFocus(control.Value) || control.Value.IsKeyboardFocusWithin)
+            {
+                SetPaneFocusVisual(control.Key);
+                if (ActiveTab?.ActivePaneId != control.Key)
+                    await Run(() => Change("pane.focus", new { paneId = control.Key }, false));
+                return;
+            }
+    }
+    private static bool HasTerminalFocus(TerminalControl control)
+    {
+        var container = FindVisualChild<TerminalContainer>(control);
+        var focused = GetFocus();
+        return container is not null && focused != IntPtr.Zero && (focused == container.Handle || IsChild(container.Handle, focused));
+    }
+    private static void FocusTerminal(TerminalControl control)
+    {
+        if (FindVisualChild<TerminalContainer>(control) is { } container)
+        {
+            container.Focus();
+            Keyboard.Focus(container);
+            if (container.Handle != IntPtr.Zero) SetFocus(container.Handle);
+            return;
+        }
+        control.Focus();
+        Keyboard.Focus(control);
     }
     private void SetPaneFocusVisual(string paneId)
     {
@@ -295,7 +550,8 @@ public partial class MainWindow : Window
     {
         await Change("pane.focus", new { paneId }, false);
         SetPaneFocusVisual(paneId);
-        if (controls.TryGetValue(paneId, out var control)) control.Focus();
+        if (controls.TryGetValue(paneId, out var control))
+            FocusTerminal(control);
     }
     private UIElement BuildSettingsPanel()
     {
@@ -329,6 +585,24 @@ public partial class MainWindow : Window
         var selectedPath = new TextBlock { Text = selected is null ? "No supported shell was detected." : $"{selected.Description} · {selected.Executable}", FontSize = 11, Foreground = ThemeBrush("MutedForegroundBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 0) };
         Grid.SetRow(selectedPath, 1); Grid.SetColumnSpan(selectedPath, 2); shellGrid.Children.Add(selectedPath);
         shellSection.Child = shellGrid; content.Children.Add(shellSection);
+
+        var fontSection = new Border { Background = ThemeBrush("PanelBackgroundBrush"), BorderBrush = ThemeBrush("BorderBrush"), BorderThickness = new Thickness(1), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 24) };
+        var fontGrid = new Grid();
+        fontGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        fontGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var fontLabel = new StackPanel();
+        fontLabel.Children.Add(new TextBlock { Text = "Terminal font size", FontSize = 14, Foreground = ThemeBrush("ForegroundBrush") });
+        fontLabel.Children.Add(new TextBlock { Text = $"{MinimumTerminalFontSize}–{MaximumTerminalFontSize} pt · Ctrl + mouse wheel or Ctrl + / Ctrl -", FontSize = 11, Foreground = ThemeBrush("MutedForegroundBrush"), Margin = new Thickness(0, 4, 0, 0) });
+        Grid.SetColumn(fontLabel, 0); fontGrid.Children.Add(fontLabel);
+        var fontCombo = new ComboBox { Name = "TerminalFontSizeComboBox", ItemsSource = Enumerable.Range(MinimumTerminalFontSize, MaximumTerminalFontSize - MinimumTerminalFontSize + 1), MinWidth = 90, ToolTip = "Choose the terminal font size" };
+        fontCombo.SelectedItem = TerminalFontSize;
+        fontCombo.SelectionChanged += async (_, _) =>
+        {
+            if (fontCombo.SelectedItem is int fontSize && !busy)
+                await Run(() => SetTerminalFontSize(fontSize));
+        };
+        Grid.SetColumn(fontCombo, 1); fontGrid.Children.Add(fontCombo);
+        fontSection.Child = fontGrid; content.Children.Add(fontSection);
 
         content.Children.Add(new TextBlock { Text = "Detected shells", FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = ThemeBrush("ForegroundBrush"), Margin = new Thickness(0, 0, 0, 10) });
         var detected = new Border { Background = ThemeBrush("PanelBackgroundBrush"), BorderBrush = ThemeBrush("BorderBrush"), BorderThickness = new Thickness(1), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 24) };
@@ -442,7 +716,10 @@ public partial class MainWindow : Window
             case "Terminal.NewTab": await NewTab(); break;
             case "Terminal.NextTab": await CycleTab(1); break;
             case "Terminal.PreviousTab": await CycleTab(-1); break;
+            case "Terminal.Focus": if (ActiveTab is { } focusTab) await FocusPane(focusTab.ActivePaneId); break;
             case "Terminal.CloseTab": if (ActiveTab is { } closeTab) await Change("tab.close", new { tabId = closeTab.Id }); break;
+            case "Terminal.IncreaseFontSize": await AdjustTerminalFontSize(1); break;
+            case "Terminal.DecreaseFontSize": await AdjustTerminalFontSize(-1); break;
             case "Terminal.SplitPaneRight": await Split("vertical"); break;
             case "Terminal.SplitPaneDown": await Split("horizontal"); break;
             case "Terminal.SplitPaneAuto": await Split(PaneHost.ActualWidth >= PaneHost.ActualHeight ? "vertical" : "horizontal"); break;
@@ -488,11 +765,13 @@ public partial class MainWindow : Window
     {
         ModifierKeys.Control => key switch
         {
-            Key.Tab => "Terminal.NextTab", Key.T => "Terminal.NewTab", Key.W => "Terminal.CloseTab", Key.N => "Workspace.New", _ => null
+            Key.Tab => "Terminal.NextTab", Key.Oem3 => "Terminal.Focus", Key.T => "Terminal.NewTab", Key.W => "Terminal.CloseTab", Key.N => "Workspace.New",
+            Key.OemPlus or Key.Add => "Terminal.IncreaseFontSize", Key.OemMinus or Key.Subtract => "Terminal.DecreaseFontSize", _ => null
         },
         ModifierKeys.Control | ModifierKeys.Shift => key switch
         {
-            Key.Tab => "Terminal.PreviousTab", Key.OemQuestion => "Help.ShowShortcuts", _ => null
+            Key.Tab => "Terminal.PreviousTab", Key.OemQuestion => "Help.ShowShortcuts",
+            Key.OemPlus or Key.Add => "Terminal.IncreaseFontSize", Key.OemMinus or Key.Subtract => "Terminal.DecreaseFontSize", _ => null
         },
         ModifierKeys.Control | ModifierKeys.Alt => key switch
         {
@@ -516,6 +795,10 @@ public partial class MainWindow : Window
                 ("Ctrl+T", "New tab"),
                 ("Ctrl+W", "Close current tab"),
                 ("Ctrl+N", "New workspace"),
+                ("Ctrl+`", "Focus terminal pane"),
+                ("Ctrl++", "Increase terminal font size"),
+                ("Ctrl+-", "Decrease terminal font size"),
+                ("Ctrl+Mouse Wheel", "Change terminal font size"),
                 ("Ctrl+?", "Show keyboard shortcuts"),
                 ("Ctrl+Shift+T", "New tab"),
                 ("Ctrl+Shift+W", "Close focused pane"),
@@ -560,9 +843,12 @@ public partial class MainWindow : Window
             var commandMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Terminal: New Tab"] = "Terminal.NewTab",
+                ["Terminal: Focus Terminal"] = "Terminal.Focus",
                 ["Terminal: Next Tab"] = "Terminal.NextTab",
                 ["Terminal: Previous Tab"] = "Terminal.PreviousTab",
                 ["Terminal: Close Tab"] = "Terminal.CloseTab",
+                ["Terminal: Increase Font Size"] = "Terminal.IncreaseFontSize",
+                ["Terminal: Decrease Font Size"] = "Terminal.DecreaseFontSize",
                 ["Terminal: Split Right"] = "Terminal.SplitPaneRight",
                 ["Terminal: Split Down"] = "Terminal.SplitPaneDown",
                 ["Terminal: Close Pane"] = "Terminal.ClosePane",
@@ -582,9 +868,12 @@ public partial class MainWindow : Window
             var shortcutMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Terminal: New Tab"] = "Ctrl+T / Ctrl+Shift+T",
+                ["Terminal: Focus Terminal"] = "Ctrl+`",
                 ["Terminal: Next Tab"] = "Ctrl+Tab",
                 ["Terminal: Previous Tab"] = "Ctrl+Shift+Tab",
                 ["Terminal: Close Tab"] = "Ctrl+W",
+                ["Terminal: Increase Font Size"] = "Ctrl++",
+                ["Terminal: Decrease Font Size"] = "Ctrl+-",
                 ["Terminal: Split Right"] = "Alt+Shift++",
                 ["Terminal: Split Down"] = "Alt+Shift+-",
                 ["Terminal: Close Pane"] = "Ctrl+Shift+W",

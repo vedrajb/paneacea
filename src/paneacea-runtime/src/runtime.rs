@@ -35,6 +35,9 @@ impl Runtime {
         };
         for pane in runtime.state.panes.values_mut() {
             pane.pid = None;
+            if pane.title.trim().is_empty() {
+                pane.title = shell_title(&pane.executable);
+            }
             match Terminal::launch(pane, &runtime.pipe) {
                 Ok(terminal) => {
                     runtime.terminals.insert(pane.id.clone(), terminal);
@@ -77,6 +80,14 @@ impl Runtime {
             .unwrap_or_else(|| vec!["-NoLogo".into()]);
         Some((executable.into(), arguments))
     }
+    fn sync_titles(&mut self) {
+        for (pane_id, terminal) in &self.terminals {
+            let title = terminal.output.lock().unwrap().title.clone();
+            if let Some(pane) = self.state.panes.get_mut(pane_id) {
+                pane.title = title;
+            }
+        }
+    }
     fn new_pane(&mut self, workspace_id: &str, tab_id: &str, value: &Value) -> Result<Pane> {
         let root = self.workspace(workspace_id)?.root_directory.clone();
         let configured = self
@@ -94,6 +105,7 @@ impl Runtime {
         } else {
             vec!["-NoLogo".into()]
         };
+        let title = shell_title(&executable);
         let environment = if value.get("environment").is_some() {
             serde_json::from_value(value["environment"].clone())?
         } else {
@@ -105,6 +117,7 @@ impl Runtime {
             tab_id: tab_id.into(),
             profile_id: "default".into(),
             executable,
+            title,
             arguments,
             environment,
             initial_working_directory: root.clone(),
@@ -140,6 +153,7 @@ impl Runtime {
         Ok(())
     }
     pub fn dispatch(&mut self, operation: &str, value: Value) -> Result<Value> {
+        self.sync_titles();
         match operation {
             "workspace.list" | "state.get" => return Ok(serde_json::to_value(&self.state)?),
             "pane.sendInput" => {
@@ -174,9 +188,10 @@ impl Runtime {
         }
         let previous = self.state.clone();
         let mut launched = Vec::new();
-        let result = self
-            .mutate(operation, &value, &mut launched)
-            .and_then(|_| self.store.save(&self.state));
+        let result = self.mutate(operation, &value, &mut launched).and_then(|_| {
+            self.sync_titles();
+            self.store.save(&self.state)
+        });
         if let Err(error) = result {
             self.state = previous;
             for pane_id in launched {

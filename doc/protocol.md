@@ -59,7 +59,7 @@ Example with PowerShell-generated JSON:
 
 ```powershell
 $request = @{ workspaceId = 'WORKSPACE-ID'; executable = 'pwsh.exe'; arguments = @('-NoLogo') } | ConvertTo-Json -Compress
-./target/debug/tinkershell.exe tab.create $request
+./target/debug/paneacea.exe tab.create $request
 ```
 
 Workspace/tab/pane metadata events, explicit agent operations, and automatic client resynchronization from the full plan are not part of protocol version 1.
