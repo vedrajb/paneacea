@@ -57,6 +57,15 @@ Open **Preferences: Open Settings** to view the detected shell paths and choose 
 
 | Shortcut | Action |
 | --- | --- |
+| Ctrl+Tab | Next tab |
+| Ctrl+Shift+Tab | Previous tab |
+| Ctrl+Alt+Tab | Next workspace |
+| Ctrl+Alt+Shift+Tab | Previous workspace |
+| Ctrl+Alt+R | Rename workspace |
+| Ctrl+T | New tab |
+| Ctrl+W | Close current tab |
+| Ctrl+N | New workspace |
+| Ctrl+? | Keyboard shortcuts popup |
 | Ctrl+Shift+T | New tab |
 | Ctrl+Shift+W | Close focused pane |
 | Ctrl+Shift+P | Command palette |

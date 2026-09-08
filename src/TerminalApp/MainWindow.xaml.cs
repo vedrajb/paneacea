@@ -4,6 +4,8 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,6 +18,7 @@ public partial class MainWindow : Window
     private readonly RuntimeClient client = new(Environment.GetEnvironmentVariable("PANEACEA_PIPE") ?? Environment.GetEnvironmentVariable("TINKERSHELL_PIPE"));
     private WorkspaceState state = new();
     private readonly Dictionary<string, TerminalControl> controls = [];
+    private readonly Dictionary<string, Border> paneBorders = [];
     private readonly List<PipeTerminalConnection> connections = [];
     private bool updating;
     private bool busy;
@@ -43,13 +46,18 @@ public partial class MainWindow : Window
             ?? shells.FirstOrDefault(shell => shell.IsAvailable && shell.Id == "git-bash")
             ?? shells.FirstOrDefault(shell => shell.IsAvailable);
     private static object ShellSetting(ShellProfile shell) => new { id = shell.Id, executable = shell.Executable, arguments = shell.Arguments };
+    private sealed record CommandPaletteItem(string Label, string Shortcut);
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += async (_, _) => await Run(Initialize);
         ComponentDispatcher.ThreadPreprocessMessage += KeyMessage;
-        StateChanged += (_, _) => MaximizeWindowButton.Content = WindowState == WindowState.Maximized ? "❐" : "□";
+        StateChanged += (_, _) =>
+        {
+            MaximizeWindowButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
+            MaximizeWindowButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
+        };
         Closed += (_, _) => { ComponentDispatcher.ThreadPreprocessMessage -= KeyMessage; Detach(); };
     }
     private async Task Run(Func<Task> action)
@@ -110,7 +118,7 @@ public partial class MainWindow : Window
     private void Detach()
     {
         foreach (var connection in connections) connection.Dispose();
-        connections.Clear(); controls.Clear(); PaneHost.Content = null;
+        connections.Clear(); controls.Clear(); paneBorders.Clear(); PaneHost.Content = null;
     }
     private void Render()
     {
@@ -128,14 +136,14 @@ public partial class MainWindow : Window
                 Background = isActiveTab ? ThemeBrush("TabActiveBackgroundBrush") : ThemeBrush("TabBackgroundBrush"),
                 Foreground = ThemeBrush("ForegroundBrush"),
                 BorderBrush = isActiveTab ? ThemeBrush("AccentBrush") : ThemeBrush("BorderBrush"),
-                BorderThickness = new Thickness(0, 0, 0, 2),
+                BorderThickness = isActiveTab ? new Thickness(0, 0, 0, 3) : new Thickness(0, 0, 0, 1),
                 MinHeight = 40,
                 Padding = new Thickness(14, 0, 14, 0),
                 ToolTip = $"Terminal tab: {tab.Title}. Right-click to rename or close."
             };
             button.Click += async (_, _) => await Run(() => Change("tab.focus", new { tabId = tab.Id }));
             var menu = new ContextMenu();
-            var rename = new MenuItem { Header = "Rename" };
+            var rename = new MenuItem { Header = "Rename tab" };
             rename.Click += async (_, _) => await Run(async () => { if (Prompt("Rename tab", "Title", tab.Title) is { } title) await Change("tab.rename", new { tabId = tab.Id, title }); });
             var close = new MenuItem { Header = "Close tab" };
             close.Click += async (_, _) => await Run(() => Change("tab.close", new { tabId = tab.Id }));
@@ -179,19 +187,37 @@ public partial class MainWindow : Window
             var connection = new PipeTerminalConnection(client, pane.Id, Report);
             control.Connection = connection;
             controls[pane.Id] = control; connections.Add(connection);
+            var isActivePane = ActiveTab?.ActivePaneId == pane.Id;
+            var border = new Border
+            {
+                BorderBrush = ThemeBrush(isActivePane ? "FocusBrush" : "TerminalBorderBrush"),
+                BorderThickness = new Thickness(isActivePane ? 2 : 1),
+                Child = panel
+            };
+            paneBorders[pane.Id] = border;
             control.Loaded += (_, _) => control.SetTheme(new TerminalTheme
             {
                 DefaultBackground = 0x1E1E1E, DefaultForeground = 0xCCCCCC, DefaultSelectionBackground = 0x784F26,
                 CursorStyle = CursorStyle.BlinkingBar,
                 ColorTable = [0x0C0C0C, 0x1F0FC5, 0x0EA113, 0x009CC1, 0xDA3700, 0x981788, 0xDD963A, 0xCCCCCC, 0x767676, 0x5648E7, 0x0CC616, 0xA5F1F9, 0xFF783B, 0x9E00B4, 0xD6D661, 0xF2F2F2]
             }, "Cascadia Mono", 13);
+            control.Loaded += (_, _) => ConfigureScrollBar(control);
             control.GotFocus += async (_, _) =>
             {
+                SetPaneFocusVisual(pane.Id);
                 if (ActiveTab?.ActivePaneId == pane.Id || busy) return;
                 await Run(() => Change("pane.focus", new { paneId = pane.Id }, false));
             };
+            control.LostFocus += (_, _) =>
+            {
+                if (ActiveTab?.ActivePaneId != pane.Id)
+                {
+                    border.BorderBrush = ThemeBrush("TerminalBorderBrush");
+                    border.BorderThickness = new Thickness(1);
+                }
+            };
             panel.Children.Add(control);
-            return new Border { BorderBrush = ThemeBrush("TerminalBorderBrush"), BorderThickness = new Thickness(1), Child = panel };
+            return border;
         }
         var grid = new Grid();
         var vertical = node.Orientation == "vertical";
@@ -224,9 +250,51 @@ public partial class MainWindow : Window
         grid.Children.Add(first); grid.Children.Add(second); grid.Children.Add(splitter);
         return grid;
     }
+    private void ConfigureScrollBar(TerminalControl control)
+    {
+        var scrollbar = FindVisualChild<ScrollBar>(control);
+        if (scrollbar is null || scrollbar.Orientation != Orientation.Vertical) return;
+        const double indicatorWidth = 5;
+        const double interactiveWidth = 14;
+        scrollbar.Width = indicatorWidth;
+        scrollbar.Background = ThemeBrush("ScrollTrackBrush");
+        scrollbar.Foreground = ThemeBrush("ScrollThumbBrush");
+        scrollbar.BorderBrush = Brushes.Transparent;
+        scrollbar.ApplyTemplate();
+        void SetHoverState(bool hovered)
+        {
+            scrollbar.Width = hovered ? interactiveWidth : indicatorWidth;
+            if (FindVisualChild<Thumb>(scrollbar) is { } thumb)
+            {
+                thumb.Background = ThemeBrush(hovered ? "ScrollThumbHoverBrush" : "ScrollThumbBrush");
+                thumb.BorderBrush = Brushes.Transparent;
+                thumb.Cursor = Cursors.Hand;
+            }
+        }
+        scrollbar.MouseEnter += (_, _) => SetHoverState(true);
+        scrollbar.MouseLeave += (_, _) => SetHoverState(false);
+        SetHoverState(false);
+    }
+    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T match) return match;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            if (FindVisualChild<T>(VisualTreeHelper.GetChild(root, index)) is { } child) return child;
+        return null;
+    }
+    private void SetPaneFocusVisual(string paneId)
+    {
+        foreach (var paneBorder in paneBorders)
+        {
+            var focused = paneBorder.Key == paneId;
+            paneBorder.Value.BorderBrush = ThemeBrush(focused ? "FocusBrush" : "TerminalBorderBrush");
+            paneBorder.Value.BorderThickness = new Thickness(focused ? 2 : 1);
+        }
+    }
     private async Task FocusPane(string paneId)
     {
         await Change("pane.focus", new { paneId }, false);
+        SetPaneFocusVisual(paneId);
         if (controls.TryGetValue(paneId, out var control)) control.Focus();
     }
     private UIElement BuildSettingsPanel()
@@ -335,7 +403,9 @@ public partial class MainWindow : Window
             }
             else panel.Children.Add(input);
             panel.Children.Add(save);
-            window.Content = panel; window.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
+            window.Content = panel;
+            window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
+            window.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
             return window.ShowDialog() == true ? input.Text.Trim() : null;
         }
         finally { dialog = false; }
@@ -357,11 +427,22 @@ public partial class MainWindow : Window
         showingSettings = false;
         return ActiveTab is { } tab ? Change("pane.split", SplitParameters(tab.ActivePaneId, orientation)) : Task.CompletedTask;
     }
+    private Task CycleTab(int direction)
+    {
+        if (ActiveWorkspace is not { } workspace || workspace.Tabs.Count == 0) return Task.CompletedTask;
+        var index = workspace.Tabs.FindIndex(tab => tab.Id == workspace.ActiveTabId);
+        if (index < 0) index = 0;
+        index = (index + workspace.Tabs.Count + direction) % workspace.Tabs.Count;
+        return Change("tab.focus", new { tabId = workspace.Tabs[index].Id });
+    }
     private async Task Execute(string action)
     {
         switch (action)
         {
             case "Terminal.NewTab": await NewTab(); break;
+            case "Terminal.NextTab": await CycleTab(1); break;
+            case "Terminal.PreviousTab": await CycleTab(-1); break;
+            case "Terminal.CloseTab": if (ActiveTab is { } closeTab) await Change("tab.close", new { tabId = closeTab.Id }); break;
             case "Terminal.SplitPaneRight": await Split("vertical"); break;
             case "Terminal.SplitPaneDown": await Split("horizontal"); break;
             case "Terminal.SplitPaneAuto": await Split(PaneHost.ActualWidth >= PaneHost.ActualHeight ? "vertical" : "horizontal"); break;
@@ -375,6 +456,7 @@ public partial class MainWindow : Window
             case "Workspace.OpenRoot": if (ActiveWorkspace is { } open) Process.Start(new ProcessStartInfo(open.RootDirectory) { UseShellExecute = true }); break;
             case "Workspace.Next": case "Workspace.Previous":
                 if (state.Workspaces.Count > 0) { var index = state.Workspaces.FindIndex(w => w.Id == state.ActiveWorkspaceId); index = (index + state.Workspaces.Count + (action == "Workspace.Next" ? 1 : -1)) % state.Workspaces.Count; await Change("workspace.switch", new { workspaceId = state.Workspaces[index].Id }); } break;
+            case "Help.ShowShortcuts": ShowShortcuts(); break;
             case "Terminal.Reconnect": state = await client.State(); Render(); break;
             default:
                 if (ActiveTab is not { } active) break;
@@ -396,10 +478,78 @@ public partial class MainWindow : Window
             Key.D => "Terminal.SplitPaneAuto", Key.OemMinus => "Terminal.SplitPaneDown", Key.OemPlus => "Terminal.SplitPaneRight",
             Key.Left or Key.Right or Key.Up or Key.Down => "Terminal.ResizePane" + key, _ => null
         };
+        if (action is null) action = NewShortcutAction(key, modifiers);
         if (action is null) return;
         handled = true;
         var selected = action;
         Dispatcher.BeginInvoke(async () => { if (selected == "Palette") Commands(); else await Run(() => Execute(selected)); });
+    }
+    private static string? NewShortcutAction(Key key, ModifierKeys modifiers) => modifiers switch
+    {
+        ModifierKeys.Control => key switch
+        {
+            Key.Tab => "Terminal.NextTab", Key.T => "Terminal.NewTab", Key.W => "Terminal.CloseTab", Key.N => "Workspace.New", _ => null
+        },
+        ModifierKeys.Control | ModifierKeys.Shift => key switch
+        {
+            Key.Tab => "Terminal.PreviousTab", Key.OemQuestion => "Help.ShowShortcuts", _ => null
+        },
+        ModifierKeys.Control | ModifierKeys.Alt => key switch
+        {
+            Key.Tab => "Workspace.Next", Key.R => "Workspace.Rename", _ => null
+        },
+        ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift => key == Key.Tab ? "Workspace.Previous" : null,
+        _ => null
+    };
+    private void ShowShortcuts()
+    {
+        dialog = true;
+        try
+        {
+            var shortcuts = new (string Shortcut, string Action)[]
+            {
+                ("Ctrl+Tab", "Next tab"),
+                ("Ctrl+Shift+Tab", "Previous tab"),
+                ("Ctrl+Alt+Tab", "Next workspace"),
+                ("Ctrl+Alt+Shift+Tab", "Previous workspace"),
+                ("Ctrl+Alt+R", "Rename workspace"),
+                ("Ctrl+T", "New tab"),
+                ("Ctrl+W", "Close current tab"),
+                ("Ctrl+N", "New workspace"),
+                ("Ctrl+?", "Show keyboard shortcuts"),
+                ("Ctrl+Shift+T", "New tab"),
+                ("Ctrl+Shift+W", "Close focused pane"),
+                ("Ctrl+Shift+P", "Command palette"),
+                ("Alt+Shift+D", "Automatic split direction"),
+                ("Alt+Shift+-", "Split pane down"),
+                ("Alt+Shift++", "Split pane right"),
+                ("Alt+Arrow", "Move focus between panes"),
+                ("Alt+Shift+Arrow", "Resize the nearest split")
+            };
+            var window = new Window { Owner = this, Title = "Keyboard Shortcuts", Width = 620, Height = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = ThemeBrush("SidebarBackgroundBrush"), Foreground = ThemeBrush("ForegroundBrush") };
+            var root = new DockPanel { Margin = new Thickness(18) };
+            var close = new Button { Content = "Close", IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(18, 6, 18, 6) };
+            close.Click += (_, _) => window.Close();
+            DockPanel.SetDock(close, Dock.Bottom);
+            root.Children.Add(close);
+            var list = new StackPanel();
+            foreach (var shortcut in shortcuts)
+            {
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var shortcutText = new TextBlock { Text = shortcut.Shortcut, Foreground = ThemeBrush("AccentBrush"), FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono") };
+                var actionText = new TextBlock { Text = shortcut.Action, Foreground = ThemeBrush("ForegroundBrush") };
+                Grid.SetColumn(shortcutText, 0); Grid.SetColumn(actionText, 1);
+                row.Children.Add(shortcutText); row.Children.Add(actionText); list.Children.Add(row);
+            }
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = list };
+            root.Children.Add(scroll);
+            window.Content = root;
+            window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
+            window.ShowDialog();
+        }
+        finally { dialog = false; }
     }
     private void Commands()
     {
@@ -410,29 +560,66 @@ public partial class MainWindow : Window
             var commandMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Terminal: New Tab"] = "Terminal.NewTab",
+                ["Terminal: Next Tab"] = "Terminal.NextTab",
+                ["Terminal: Previous Tab"] = "Terminal.PreviousTab",
+                ["Terminal: Close Tab"] = "Terminal.CloseTab",
                 ["Terminal: Split Right"] = "Terminal.SplitPaneRight",
                 ["Terminal: Split Down"] = "Terminal.SplitPaneDown",
                 ["Terminal: Close Pane"] = "Terminal.ClosePane",
                 ["Terminal: Rename Tab"] = "Terminal.OpenTabRenamer",
                 ["Preferences: Open Settings"] = "Preferences.Settings",
                 ["Workspace: Open Folder"] = "Workspace.New",
+                ["Workspace: New Workspace"] = "Workspace.New",
                 ["Workspace: Rename Workspace"] = "Workspace.Rename",
                 ["Workspace: Change Workspace Folder"] = "Workspace.ChangeRoot",
                 ["Workspace: Open Folder in Explorer"] = "Workspace.OpenRoot",
                 ["Workspace: Next"] = "Workspace.Next",
                 ["Workspace: Previous"] = "Workspace.Previous",
                 ["Workspace: Close"] = "Workspace.Close",
+                ["Help: Keyboard Shortcuts"] = "Help.ShowShortcuts",
                 ["Paneacea: Reconnect Runtime"] = "Terminal.Reconnect"
             };
+            var shortcutMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Terminal: New Tab"] = "Ctrl+T / Ctrl+Shift+T",
+                ["Terminal: Next Tab"] = "Ctrl+Tab",
+                ["Terminal: Previous Tab"] = "Ctrl+Shift+Tab",
+                ["Terminal: Close Tab"] = "Ctrl+W",
+                ["Terminal: Split Right"] = "Alt+Shift++",
+                ["Terminal: Split Down"] = "Alt+Shift+-",
+                ["Terminal: Close Pane"] = "Ctrl+Shift+W",
+                ["Workspace: Open Folder"] = "Ctrl+N",
+                ["Workspace: New Workspace"] = "Ctrl+N",
+                ["Workspace: Rename Workspace"] = "Ctrl+Alt+R",
+                ["Workspace: Next"] = "Ctrl+Alt+Tab",
+                ["Workspace: Previous"] = "Ctrl+Alt+Shift+Tab",
+                ["Help: Keyboard Shortcuts"] = "Ctrl+?"
+            };
             string[] actions = [.. commandMap.Keys];
+            CommandPaletteItem CreateCommandPaletteItem(string action) => new(action, shortcutMap.TryGetValue(action, out var shortcut) ? shortcut : "—");
+            var commandItems = actions.Select(CreateCommandPaletteItem).ToArray();
             var window = new Window { Owner = this, Title = "Command Palette", Width = 460, Height = 450, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = ThemeBrush("SidebarBackgroundBrush"), Foreground = ThemeBrush("ForegroundBrush") };
             var panel = new DockPanel { Margin = new Thickness(12) };
             var filter = new TextBox(); DockPanel.SetDock(filter, Dock.Top);
-            var list = new ListBox { ItemsSource = actions, SelectedIndex = 0 };
-            filter.TextChanged += (_, _) => { list.ItemsSource = actions.Where(a => a.Contains(filter.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); list.SelectedIndex = 0; };
-            void Choose() { if (list.SelectedItem is string action && commandMap.TryGetValue(action, out var command)) { selected = command; window.DialogResult = true; } }
+            var list = new ListBox { ItemsSource = commandItems, SelectedIndex = 0 };
+            var itemTemplate = new DataTemplate();
+            var row = new FrameworkElementFactory(typeof(DockPanel));
+            row.SetValue(DockPanel.MarginProperty, new Thickness(6, 4, 6, 4));
+            var shortcut = new FrameworkElementFactory(typeof(TextBlock));
+            shortcut.SetValue(DockPanel.DockProperty, Dock.Right);
+            shortcut.SetValue(TextBlock.ForegroundProperty, ThemeBrush("MutedForegroundBrush"));
+            shortcut.SetValue(TextBlock.FontFamilyProperty, new FontFamily("Cascadia Mono"));
+            shortcut.SetValue(TextBlock.MarginProperty, new Thickness(18, 0, 4, 0));
+            shortcut.SetBinding(TextBlock.TextProperty, new Binding(nameof(CommandPaletteItem.Shortcut)));
+            var label = new FrameworkElementFactory(typeof(TextBlock));
+            label.SetValue(TextBlock.ForegroundProperty, ThemeBrush("ForegroundBrush"));
+            label.SetBinding(TextBlock.TextProperty, new Binding(nameof(CommandPaletteItem.Label)));
+            row.AppendChild(shortcut); row.AppendChild(label);
+            itemTemplate.VisualTree = row; list.ItemTemplate = itemTemplate;
+            filter.TextChanged += (_, _) => { list.ItemsSource = actions.Where(a => a.Contains(filter.Text, StringComparison.OrdinalIgnoreCase)).Select(CreateCommandPaletteItem).ToArray(); list.SelectedIndex = 0; };
+            void Choose() { if (list.SelectedItem is CommandPaletteItem item && commandMap.TryGetValue(item.Label, out var command)) { selected = command; window.DialogResult = true; } }
             list.MouseDoubleClick += (_, _) => Choose();
-            window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter) { Choose(); e.Handled = true; } if (e.Key == Key.Escape) window.Close(); };
+            window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter) { Choose(); e.Handled = true; } if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
             panel.Children.Add(filter); panel.Children.Add(list); window.Content = panel;
             window.Loaded += (_, _) => filter.Focus(); window.ShowDialog();
         }
@@ -443,6 +630,20 @@ public partial class MainWindow : Window
     {
         if (!updating && WorkspaceList.SelectedItem is Workspace workspace && workspace.Id != state.ActiveWorkspaceId)
             await Run(() => Change("workspace.switch", new { workspaceId = workspace.Id }));
+    }
+    private async void RenameWorkspaceContextMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not Workspace workspace) return;
+        await Run(async () =>
+        {
+            if (Prompt("Rename workspace", "Name", workspace.Name) is { } name)
+                await Change("workspace.rename", new { workspaceId = workspace.Id, name });
+        });
+    }
+    private async void CloseWorkspaceContextMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not Workspace workspace) return;
+        await Run(() => Change("workspace.close", new { workspaceId = workspace.Id }));
     }
     private async void NewTab_Click(object sender, RoutedEventArgs e) => await Run(NewTab);
     private async void NewWorkspace_Click(object sender, RoutedEventArgs e) => await Run(NewWorkspace);

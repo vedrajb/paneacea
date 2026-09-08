@@ -3,8 +3,8 @@
   <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#252526"/>
   <SolidColorBrush x:Key="ActivityBarBackgroundBrush" Color="#333333"/>
   <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#181818"/>
-  <SolidColorBrush x:Key="TabBackgroundBrush" Color="#2D2D2D"/>
-  <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#1E1E1E"/>
+  <SolidColorBrush x:Key="TabBackgroundBrush" Color="#1E1E1E"/>
+  <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#2D2D2D"/>
   <SolidColorBrush x:Key="BorderBrush" Color="#3F3F46"/>
   <SolidColorBrush x:Key="ForegroundBrush" Color="#CCCCCC"/>
   <SolidColorBrush x:Key="MutedForegroundBrush" Color="#858585"/>
@@ -16,6 +16,9 @@
   <SolidColorBrush x:Key="ButtonHoverBrush" Color="#3A3D41"/>
   <SolidColorBrush x:Key="ButtonPressedBrush" Color="#094771"/>
   <SolidColorBrush x:Key="SelectionBrush" Color="#264F78"/>
+  <SolidColorBrush x:Key="ScrollTrackBrush" Color="#252526"/>
+  <SolidColorBrush x:Key="ScrollThumbBrush" Color="#666666"/>
+  <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#C8C8C8"/>
   <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#007ACC"/>
   <SolidColorBrush x:Key="TerminalBorderBrush" Color="#454545"/>
 
