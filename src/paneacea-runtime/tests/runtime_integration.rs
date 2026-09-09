@@ -63,6 +63,12 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
     std::fs::create_dir_all(&second_directory)?;
     std::fs::create_dir_all(&third_directory)?;
     let daemon = start(&name, &directory).await?;
+    assert!(directory.join("paneacea.db").is_file());
+    assert!(directory
+        .join("logs")
+        .join("paneacea-runtime.log")
+        .is_file());
+    assert!(!directory.join("paneacea-runtime.log").exists());
     let state = call(
         &name,
         "workspace.create",
@@ -298,12 +304,9 @@ async fn conpty_detach_layout_restart_and_validation() -> Result<()> {
             "PERSIST-PANE-THREE"
         };
         assert!(restored_output.contains(marker));
-        if pane == pane_id {
-            assert!(restored_output.contains("Paneacea restored terminal history"));
-        }
     }
     let restored_second = attach(&name, second).await?;
-    assert_eq!(restored_second["viewportOffset"].as_u64(), Some(0));
+    assert!(restored_second["viewportOffset"].as_u64().unwrap_or(0) > 0);
     let closed = call(&name, "pane.close", json!({"paneId":second})).await?;
     assert_eq!(closed["panes"].as_object().unwrap().len(), 2);
     let closed: Value = call(

@@ -5,5 +5,7 @@ target/
 .build-validation/
 .packages/
 .cargo-home/
+/portable-release/
+/portable-release-*/
 *.user
 *.log

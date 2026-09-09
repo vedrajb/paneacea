@@ -26,6 +26,23 @@ var tests = new (string Name, Action Test)[]
         catch (IOException error) { failed = error.Message == "invalid pane"; }
         Check(failed);
     }),
+    ("Portable data and log paths", () =>
+    {
+        var previousData = Environment.GetEnvironmentVariable("PANEACEA_DATA");
+        var previousLog = Environment.GetEnvironmentVariable("PANEACEA_LOG");
+        Environment.SetEnvironmentVariable("PANEACEA_DATA", null);
+        Environment.SetEnvironmentVariable("PANEACEA_LOG", null);
+        try
+        {
+            Check(AppLogger.DataDirectory == AppContext.BaseDirectory);
+            Check(AppLogger.LogPath == Path.Combine(AppContext.BaseDirectory, "logs", "paneacea-app.log"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PANEACEA_DATA", previousData);
+            Environment.SetEnvironmentVariable("PANEACEA_LOG", previousLog);
+        }
+    }),
     ("Workspace protocol deserialization", () =>
     {
         var state = JsonSerializer.Deserialize<WorkspaceState>("""

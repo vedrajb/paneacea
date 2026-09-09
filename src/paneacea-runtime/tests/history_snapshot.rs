@@ -36,12 +36,24 @@ fn restored_history_stays_at_the_top_when_terminal_height_changes() {
     let mut restored = vt100::Parser::new(history.rows, history.columns, 100);
 
     restored.process(&history.data);
-    restored.process(b"\r\n--- restored ---\r\nnew prompt");
+    restored.process(b"\r\nnew prompt");
+    restored.set_scrollback(usize::MAX);
     restored.set_size(50, 80);
 
     let contents = restored.screen().contents();
     let lines = contents.lines().collect::<Vec<_>>();
     assert_eq!(lines.first().copied(), Some("saved prompt"));
-    assert_eq!(lines.get(1).copied(), Some("--- restored ---"));
-    assert_eq!(lines.get(2).copied(), Some("new prompt"));
+    assert_eq!(lines.get(1).copied(), Some("new prompt"));
+}
+
+#[test]
+fn restored_history_resets_the_new_shell_cursor_to_column_zero() {
+    let mut output = output(30, 80, b"saved prompt");
+    let history = history_snapshot(&mut output, 100);
+    let mut restored = vt100::Parser::new(history.rows, history.columns, 100);
+
+    restored.process(&history.data);
+    restored.process(b"\r");
+
+    assert_eq!(restored.screen().cursor_position().1, 0);
 }

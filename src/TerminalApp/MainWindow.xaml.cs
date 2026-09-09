@@ -90,7 +90,7 @@ public partial class MainWindow : Window
         AppLogger.Initialize();
         AppLogger.Info(
             "app.start",
-            $"pipe={client.PipeName} base_directory={AppContext.BaseDirectory} data={Environment.GetEnvironmentVariable("PANEACEA_DATA") ?? "default"} log={AppLogger.LogPath}");
+            $"pipe={client.PipeName} base_directory={AppContext.BaseDirectory} data={AppLogger.DataDirectory} log={AppLogger.LogPath}");
         SourceInitialized += (_, _) =>
         {
             windowSource = (HwndSource)PresentationSource.FromVisual(this)!;
@@ -231,9 +231,10 @@ public partial class MainWindow : Window
             if (!File.Exists(executable)) throw new FileNotFoundException("Build with scripts/build.ps1 so panacea-runtime.exe is beside Paneacea.App.exe.");
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
             start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(client.PipeName);
-            if (Environment.GetEnvironmentVariable("PANEACEA_DATA") is { Length: > 0 } directory) { start.ArgumentList.Add("--data"); start.ArgumentList.Add(directory); }
+            var directory = AppLogger.DataDirectory;
+            start.ArgumentList.Add("--data"); start.ArgumentList.Add(directory);
             using var process = Process.Start(start);
-            AppLogger.Info("app.runtime.started", $"executable={executable} data={Environment.GetEnvironmentVariable("PANEACEA_DATA") ?? "default"}");
+            AppLogger.Info("app.runtime.started", $"executable={executable} data={directory}");
             for (var attempt = 0; ; attempt++)
             {
                 try

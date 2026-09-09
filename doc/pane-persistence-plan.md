@@ -33,11 +33,10 @@ On runtime startup:
 
 1. Load and decrypt each pane's saved history.
 2. Recreate the terminal parser using the saved dimensions and history.
-3. Add a muted restart divider indicating that the previous process ended.
-4. Launch a new shell in the saved working directory.
-5. Return the restored snapshot when the GUI attaches.
+3. Launch a new shell in the saved working directory.
+4. Return the restored snapshot when the GUI attaches.
 
-The GUI opens restored panes at the bottom of their saved terminal history. Scroll position is a live terminal concern and is not restored after a runtime restart.
+The GUI opens restored panes at the top of their saved terminal history. Scroll position is a live terminal concern and is not restored after a runtime restart.
 
 ## Working-directory tracking
 
@@ -68,7 +67,7 @@ Add coverage for:
 - DPAPI round trips and corrupt or wrong-user data
 - Fragmented OSC 7 parsing and path validation
 - History surviving ordinary state saves and being deleted with panes, tabs, or workspaces
-- Runtime restart restoring history, adding the restart divider, and launching a new shell
+- Runtime restart restoring history and launching a new shell at the top of the restored history
 - GUI attach preserving the current live viewport independently for every pane
 
 Update the README and protocol documentation to describe the persistence guarantees and the fact that shell processes themselves are relaunched.

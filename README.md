@@ -20,7 +20,7 @@ Run from the repository directory in PowerShell:
 
 ```powershell
 ./scripts/build.ps1
-& ./src/TerminalApp/bin/Debug/net9.0-windows/win-x64/Paneacea.App.exe
+& ./portable-release/Paneacea.App.exe
 ```
 
 The build script builds both components and places the runtime and protocol CLI beside the GUI. The app starts the runtime automatically if it is not running. The first launch creates a Default workspace rooted at the launch working directory.
@@ -29,10 +29,10 @@ For an optimized build:
 
 ```powershell
 ./scripts/build.ps1 -Configuration Release
-& ./src/TerminalApp/bin/Release/net9.0-windows/win-x64/Paneacea.App.exe
+& ./portable-release/Paneacea.App.exe
 ```
 
-Keep the entire output directory together: the renderer requires its managed and native libraries. The GUI executable is `Paneacea.App.exe`; the output directory also contains the runtime and protocol CLI. Separate filenames avoid Windows' case-insensitive filename collision.
+Keep the entire output directory together: the renderer requires its managed and native libraries. The GUI executable is `Paneacea.App.exe`; the output directory also contains the runtime and protocol CLI. This directory is the portable deployment root. Separate filenames avoid Windows' case-insensitive filename collision.
 
 ## Using the app
 
@@ -70,14 +70,14 @@ Closing a pane, tab, or workspace terminates its shells and removes the correspo
 
 ## Persistence and runtime
 
-By default, Paneacea data lives in `%LOCALAPPDATA%\Paneacea\paneacea.db`, with SQLite WAL companion files. The per-user pipe is `paneacea-<sanitized username>`, with access restricted to the owning user and remote clients rejected. Layout and per-pane state are restored when the app reconnects to the same data directory and user-owned runtime.
+By default, the directory containing `Paneacea.App.exe` is the portable data root. `paneacea.db`, its SQLite WAL companion files, and the `settings` table all live directly under that root. Logs are written under `<root>\logs\`. The per-user pipe is `paneacea-<sanitized username>`, with access restricted to the owning user and remote clients rejected. Layout and per-pane state are restored when the app reconnects to the same data directory and user-owned runtime.
 
 To keep development data inside this repository and isolate it from other instances:
 
 ```powershell
 $env:PANEACEA_DATA = Join-Path $PWD '.data/dev'
 $env:PANEACEA_PIPE = 'paneacea-dev'
-& ./src/TerminalApp/bin/Debug/net9.0-windows/win-x64/Paneacea.App.exe
+& ./portable-release/Paneacea.App.exe
 ```
 
 You can also start the runtime directly:
@@ -91,11 +91,11 @@ Use one runtime per data directory. To shut it down, first close its workspaces 
 Two forms of persistence have different guarantees:
 
 - **GUI detach:** existing processes and their in-memory state survive. Reattachment reconstructs the current screen from a bounded runtime terminal model.
-- **Runtime restart or reboot:** saved layouts, split ratios, pane folders, terminal dimensions, and encrypted terminal history are restored per pane. Panes reopen at the bottom of their restored history; scrollbar positions are not persisted. The shell process is relaunched in the saved folder; shell variables, running jobs, and live full-screen application processes are not resumed. A restart divider marks the transition.
+- **Runtime restart or reboot:** saved layouts, split ratios, pane folders, terminal dimensions, and encrypted terminal history are restored per pane. Panes reopen at the top of their restored history; scrollbar positions are not persisted. The shell process is relaunched in the saved folder; shell variables, running jobs, and live full-screen application processes are not resumed.
 
 Saved terminal history is configured in Settings with Off, 500, 2,000, 5,000, 10,000, and 25,000-line presets. History is encrypted with Windows DPAPI for the current Windows user. Off removes persisted history while leaving the current runtime's in-memory terminal behavior available.
 
-When diagnosing restore problems, inspect `paneacea-runtime.log` beside `paneacea.db` and `paneacea-app.log` beside the application executable (or beside `PANEACEA_DATA` when that variable is set). Both logs include restore paths, state counts, pane IDs, history-row outcomes, and attach metadata, but never terminal input or saved terminal text. Set `PANEACEA_LOG` to override the application log path.
+When diagnosing restore problems, inspect `logs\paneacea-runtime.log` and `logs\paneacea-app.log` under the portable root (or under the `PANEACEA_DATA` root when that variable is set). Both logs include restore paths, state counts, pane IDs, history-row outcomes, and attach metadata, but never terminal input or saved terminal text. Set `PANEACEA_LOG` to override the application log path.
 
 ## Tests
 

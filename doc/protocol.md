@@ -60,11 +60,11 @@ Base64 preserves arbitrary byte boundaries; clients need an incremental UTF-8 de
 
 ## Per-pane persistence
 
-Pane layout, launch configuration, current working directory, terminal dimensions, and saved terminal history are associated with the pane ID inside its tab. Saved history is encrypted with Windows DPAPI for the current Windows user. A restored pane opens at the live bottom of its terminal history; scroll position is not persisted. The `terminalHistoryLines` setting accepts `0`, `500`, `2000`, `5000`, `10000`, or `25000`; the default is `2000`, and `0` disables persisted history.
+Pane layout, launch configuration, current working directory, terminal dimensions, and saved terminal history are associated with the pane ID inside its tab. Saved history is encrypted with Windows DPAPI for the current Windows user. A restored pane opens at the top of its terminal history; scroll position is not persisted. The `terminalHistoryLines` setting accepts `0`, `500`, `2000`, `5000`, `10000`, or `25000`; the default is `2000`, and `0` disables persisted history.
 
 Interactive PowerShell and Git Bash sessions emit OSC 7 working-directory notifications through temporary runtime-provided prompt integration. The runtime validates local paths and falls back to the last saved directory when integration is unavailable.
 
-When the runtime restarts, it restores the saved terminal snapshot and then launches a new shell in the saved directory. Shell variables, running jobs, and live full-screen application processes are not resumed. A restart divider is included in the restored terminal output.
+When the runtime restarts, it restores the saved terminal snapshot and then launches a new shell in the saved directory. Shell variables, running jobs, and live full-screen application processes are not resumed. The restored terminal opens at the top of its history.
 
 Example with PowerShell-generated JSON:
 

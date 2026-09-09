@@ -15,8 +15,6 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-const RESTART_DIVIDER: &[u8] = b"\x1b[90m\r\n--- Paneacea restored terminal history; the previous process ended and a new shell was started ---\x1b[0m\r\n";
-
 pub struct Output {
     pub parser: vt100::Parser,
     pub sender: broadcast::Sender<Vec<u8>>,
@@ -76,6 +74,7 @@ impl Terminal {
             &mut environment,
         );
         let integration_file = if bash_integration && !has_bash_rcfile(&pane.arguments) {
+            remove_bash_login(&mut arguments);
             arguments.insert(0, "--rcfile".into());
             let path = create_bash_rcfile(!has_bash_noprofile(&pane.arguments))?;
             arguments.insert(1, path.to_string_lossy().into_owned());
@@ -142,10 +141,10 @@ impl Terminal {
         let mut parser = vt100::Parser::new(rows, columns, parser_history);
         if let Some(history) = &history {
             parser.process(&history.data);
-            parser.process(RESTART_DIVIDER);
-            parser.set_scrollback(0);
+            parser.process(b"\r");
+            parser.set_scrollback(usize::MAX);
         }
-        let viewport_offset = 0;
+        let viewport_offset = parser.screen().scrollback();
         let output = Arc::new(Mutex::new(Output {
             parser,
             sender,
@@ -353,6 +352,11 @@ fn has_bash_rcfile(arguments: &[String]) -> bool {
     })
 }
 
+fn remove_bash_login(arguments: &mut Vec<String>) {
+    arguments
+        .retain(|argument| !matches!(argument.to_ascii_lowercase().as_str(), "--login" | "-l"));
+}
+
 fn has_bash_noprofile(arguments: &[String]) -> bool {
     arguments.iter().any(|argument| {
         matches!(
@@ -473,6 +477,13 @@ mod tests {
         assert!(contents.contains("$HOME/.bash_profile"));
         assert!(contents.contains("__paneacea_prompt_command"));
         assert!(contents.contains("PROMPT_COMMAND"));
+    }
+
+    #[test]
+    fn custom_bash_startup_removes_the_login_flag() {
+        let mut arguments = vec!["--login".into(), "-i".into(), "-l".into()];
+        remove_bash_login(&mut arguments);
+        assert_eq!(arguments, ["-i"]);
     }
 
     #[test]

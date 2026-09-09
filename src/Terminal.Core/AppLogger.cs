@@ -8,6 +8,15 @@ public static class AppLogger
     private static readonly object Gate = new();
     private static string? path;
 
+    public static string DataDirectory
+    {
+        get
+        {
+            var dataDirectory = Environment.GetEnvironmentVariable("PANEACEA_DATA");
+            return string.IsNullOrWhiteSpace(dataDirectory) ? AppContext.BaseDirectory : dataDirectory;
+        }
+    }
+
     public static string LogPath
     {
         get
@@ -31,11 +40,12 @@ public static class AppLogger
     {
         if (path is not null) return path;
         var configuredPath = preferredPath ?? Environment.GetEnvironmentVariable("PANEACEA_LOG");
-        var dataDirectory = Environment.GetEnvironmentVariable("PANEACEA_DATA");
+        var dataDirectory = DataDirectory;
         path = !string.IsNullOrWhiteSpace(configuredPath)
             ? configuredPath
             : Path.Combine(
-                string.IsNullOrWhiteSpace(dataDirectory) ? AppContext.BaseDirectory : dataDirectory,
+                dataDirectory,
+                "logs",
                 "paneacea-app.log");
         try
         {

@@ -4,6 +4,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::{
     ffi::c_void,
+    path::Path,
     sync::{Arc, Mutex},
 };
 use tokio::{
@@ -173,7 +174,11 @@ async fn connection(pipe: NamedPipeServer, runtime: Arc<Mutex<Runtime>>) -> Resu
     Ok(())
 }
 pub async fn serve(name: &str, path: &std::path::Path) -> Result<()> {
-    let log_path = path.with_file_name("paneacea-runtime.log");
+    let log_path = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("logs")
+        .join("paneacea-runtime.log");
     if let Err(error) = logging::init(&log_path) {
         eprintln!(
             "could not initialize runtime log {}: {error:#}",
