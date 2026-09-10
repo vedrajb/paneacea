@@ -34,7 +34,7 @@ The result shown above is illustrative; workspace creation returns the updated f
 | `terminal.viewport.set` | `paneId`, `offset` | Current scroll offset from the bottom |
 | `settings.set` | `key`, `value` | Full state |
 
-`tab.create` and `pane.split` accept optional `executable`, `arguments` (string array), and `environment` (string map). When `executable` is omitted, the runtime uses the persisted `settings.defaultShell` object. If no default is saved, it falls back to `powershell.exe` and `['-NoLogo']`. When selecting a different executable explicitly, provide its arguments, including `[]` if none. No command string is passed through an intermediate shell.
+`tab.create` and `pane.split` accept optional `executable`, `arguments` (string array), and `environment` (string map). When `executable` is omitted, the runtime uses the persisted `settings.defaultShell` object. A new installation selects the first available profile in this order: Git Bash, PowerShell 7, Windows PowerShell, then Command Prompt. When selecting a different executable explicitly, provide its arguments, including `[]` if none. No command string is passed through an intermediate shell.
 
 The MVP settings panel stores a default shell like this:
 
@@ -42,7 +42,7 @@ The MVP settings panel stores a default shell like this:
 {"key":"defaultShell","value":{"id":"git-bash","executable":"C:\\Program Files\\Git\\usr\\bin\\bash.exe","arguments":["--login","-i"]}}
 ```
 
-The supported UI profiles are `pwsh`, `powershell`, `git-bash`, and `cmd`. Existing panes retain their persisted executable and arguments when the default changes.
+The supported UI profiles are `git-bash`, `pwsh`, `powershell`, and `cmd`. Existing panes retain their persisted executable and arguments when the default changes.
 
 `orientation` is `vertical` (left/right) or `horizontal` (top/bottom). A split `path` is an array of `0` (first child) and `1` (second child); `[]` selects the root. Ratios must be between `0.1` and `0.9`. Terminal dimensions are separate: 1–500 rows, 1–1000 columns.
 

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-labelledby="title desc">
+  <title id="title">Paneacea light tray icon</title>
+  <desc id="desc">A compact light four-pane Paneacea mark for dark system trays.</desc>
+  <g fill="#F1F7FC">
+    <rect x="1.75" y="1.75" width="8.25" height="8.25" rx="2.3"/>
+    <rect x="14" y="1.75" width="8.25" height="8.25" rx="2.3"/>
+    <rect x="1.75" y="14" width="8.25" height="8.25" rx="2.3"/>
+    <rect x="14" y="14" width="8.25" height="8.25" rx="2.3"/>
+  </g>
+  <path d="M12 6.65C12.38 9.2 12.75 10.35 14.15 11.1C15.05 11.58 16.05 11.78 17.35 12C16.05 12.22 15.05 12.42 14.15 12.9C12.75 13.65 12.38 14.8 12 17.35C11.62 14.8 11.25 13.65 9.85 12.9C8.95 12.42 7.95 12.22 6.65 12C7.95 11.78 8.95 11.58 9.85 11.1C11.25 10.35 11.62 9.2 12 6.65Z" fill="#1A2A3A" stroke="#1A2A3A" stroke-width="1.15" stroke-linejoin="round"/>
+  <path d="M12 7.8C12.28 9.65 12.63 10.55 13.65 11.15C14.35 11.56 15.05 11.75 16.2 12C15.05 12.25 14.35 12.44 13.65 12.85C12.63 13.45 12.28 14.35 12 16.2C11.72 14.35 11.37 13.45 10.35 12.85C9.65 12.44 8.95 12.25 7.8 12C8.95 11.75 9.65 11.56 10.35 11.15C11.37 10.55 11.72 9.65 12 7.8Z" fill="#F1F7FC"/>
+  <path d="M4.15 4.15L5.75 5.75L4.15 7.35M6.65 7.35H8" fill="none" stroke="#1A2A3A" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
