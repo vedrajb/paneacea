@@ -1,6 +1,20 @@
 # Paneacea
 
-A Windows terminal workspace app with a native WPF interface and a persistent Rust runtime.
+A Windows terminal workspace app built with Wails, Svelte, and a persistent Go runtime. The earlier Rust/C# source is archived under `archive/rust-csharp`.
+
+## Wails / Go application
+
+Double-click `build-wails.bat` to build and launch the Wails app. Use `build-wails.bat --build-only` to build without launching.
+
+```powershell
+.\scripts\build-wails.ps1 -Run
+```
+
+Or run an existing build with `.\build\bin\paneacea.exe`. Requires Go 1.24.2+, Node.js 20.19+, and WebView2. The build script also supports the workspace-local Go toolchain.
+
+See [Wails usage, architecture, CLI, and validation](doc/wails-implementation.md). Run `.\scripts\test-wails.ps1` for the Go and frontend tests. Phase 0 is removed from the [Wails plan](doc/panacea-plan-wails.md).
+
+The remaining instructions below are retained as historical documentation for the archived Rust/C# source. Its executable build scripts and generated artifacts have been removed, while the dependency manifests remain in the archive for reference.
 
 The runtime owns the shells. Closing the app detaches the interface; reopening it reconnects to the same running sessions.
 
@@ -12,7 +26,7 @@ The runtime owns the shells. Closing the app detaches the interface; reopening i
 - Visual Studio Build Tools with **Desktop development with C++** and a Windows SDK, for Rust linking and bundled SQLite.
 - Internet access on the first build to restore NuGet and crates.io dependencies.
 
-The first launch prefers PowerShell 7 (`pwsh`), then Windows PowerShell (`powershell`), Git Bash, and Command Prompt. Open **Settings** from the activity bar or Command Palette to choose another detected shell. The selection applies to new tabs and split panes; existing sessions keep their saved launch command. The renderer is distributed through the pinned [`CI.Microsoft.Terminal.Wpf` package](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002), a community repackaging of Microsoft's terminal control. This is not an official Microsoft application.
+The first launch prefers Git Bash, then PowerShell 7 (`pwsh`), Windows PowerShell (`powershell`), and Command Prompt. Open **Settings** from the activity bar or Command Palette to choose another detected shell. The selection applies to new tabs and split panes; existing sessions keep their saved launch command. The renderer is distributed through the pinned [`CI.Microsoft.Terminal.Wpf` package](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002), a community repackaging of Microsoft's terminal control. This is not an official Microsoft application.
 
 ## Build and run
 
@@ -128,7 +142,7 @@ Paneacea.App.exe (WPF + Microsoft.Terminal.Wpf)
       portable-pty          SQLite
           ConPTY
             |
-        pwsh / Windows PowerShell / Git Bash / cmd
+        Git Bash / pwsh / Windows PowerShell / cmd
 ```
 
 `src/Terminal.Core` contains C# protocol models, the pipe client, layout geometry, and Windows shell discovery. `src/TerminalApp` contains the WPF client. `src/paneacea-runtime` contains the runtime, SQLite store, split tree, terminal model, and developer CLI. The runtime binary is `panacea-runtime.exe`. The GUI creates render controls only for the selected tab; hidden panes remain runtime sessions.

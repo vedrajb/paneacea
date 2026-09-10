@@ -30,6 +30,8 @@
 - Test modified and unmodified input paths when changing keyboard, mouse, clipboard, or focus handling.
 - Do not consume an input event unless the application intentionally owns it.
 - Avoid logging user-entered content, clipboard contents, secrets, or other sensitive data.
+- Treat `Escape` as cancel or dismiss for every popup, dialog, subwindow, and context menu.
+- Treat `Enter` as the primary confirm or submit action for every popup and dialog; focused buttons keep their native action, and textareas keep `Enter` for new lines.
 
 ## Documentation
 

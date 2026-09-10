@@ -7,5 +7,11 @@ target/
 .cargo-home/
 /portable-release/
 /portable-release-*/
+wails-prototype/
 *.user
 *.log
+
+/frontend/node_modules/
+/frontend/dist/
+/frontend/wailsjs/
+/build/
