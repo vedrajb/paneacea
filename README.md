@@ -2,149 +2,146 @@
 
 A Windows terminal workspace app built with Wails, Svelte, and a persistent Go runtime. The earlier Rust/C# source is archived under `archive/rust-csharp`.
 
-## Wails / Go application
-
-Double-click `build-wails.bat` to build and launch the Wails app. Use `build-wails.bat --build-only` to build without launching.
-
-```powershell
-.\scripts\build-wails.ps1 -Run
-```
-
-Or run an existing build with `.\build\bin\paneacea.exe`. Requires Go 1.24.2+, Node.js 20.19+, and WebView2. The build script also supports the workspace-local Go toolchain.
-
-See [Wails usage, architecture, CLI, and validation](doc/wails-implementation.md). Run `.\scripts\test-wails.ps1` for the Go and frontend tests. Phase 0 is removed from the [Wails plan](doc/panacea-plan-wails.md).
-
-The remaining instructions below are retained as historical documentation for the archived Rust/C# source. Its executable build scripts and generated artifacts have been removed, while the dependency manifests remain in the archive for reference.
-
-The runtime owns the shells. Closing the app detaches the interface; reopening it reconnects to the same running sessions.
-
 ## Requirements
 
-- Windows 10 version 1809 or later, or Windows 11, x64.
-- .NET 9 SDK (and the .NET 9 Desktop Runtime on a machine running a framework-dependent build).
-- Stable Rust with the `x86_64-pc-windows-msvc` toolchain.
-- Visual Studio Build Tools with **Desktop development with C++** and a Windows SDK, for Rust linking and bundled SQLite.
-- Internet access on the first build to restore NuGet and crates.io dependencies.
+- Windows 10 version 1809 or later, or Windows 11 (x64)
+- WebView2 Runtime
+- Go 1.24.2 or newer
+- Node.js 20.19 or newer
+- Internet access on the first dependency installation and build
 
-The first launch prefers Git Bash, then PowerShell 7 (`pwsh`), Windows PowerShell (`powershell`), and Command Prompt. Open **Settings** from the activity bar or Command Palette to choose another detected shell. The selection applies to new tabs and split panes; existing sessions keep their saved launch command. The renderer is distributed through the pinned [`CI.Microsoft.Terminal.Wpf` package](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002), a community repackaging of Microsoft's terminal control. This is not an official Microsoft application.
+## Install dependencies
+
+Run from the repository root:
+
+```powershell
+npm i
+```
+
+The root npm `postinstall` installs the frontend dependencies and downloads the Go modules. To invoke the underlying script explicitly, use:
+
+```powershell
+npm run install:all
+```
 
 ## Build and run
 
-Run from the repository directory in PowerShell:
+From the repository root, build and launch the application with:
 
 ```powershell
-./scripts/build.ps1
-& ./portable-release/Paneacea.App.exe
+.\build.bat
 ```
 
-The build script builds both components and places the runtime and protocol CLI beside the GUI. The app starts the runtime automatically if it is not running. The first launch creates a Default workspace rooted at the launch working directory.
-
-For an optimized build:
+Build without launching:
 
 ```powershell
-./scripts/build.ps1 -Configuration Release
-& ./portable-release/Paneacea.App.exe
+.\build.bat --build-only
 ```
 
-Keep the entire output directory together: the renderer requires its managed and native libraries. The GUI executable is `Paneacea.App.exe`; the output directory also contains the runtime and protocol CLI. This directory is the portable deployment root. Separate filenames avoid Windows' case-insensitive filename collision.
+The PowerShell build script can also be run directly. Omit `-Run` to build without launching:
 
-## Using the app
+```powershell
+.\scripts\build-wails.ps1
+.\scripts\build-wails.ps1 -Run
+```
 
-The WPF shell uses a dark, VS Code-inspired presentation: an activity bar, Explorer workspace list, terminal tabs, pane headers, command palette, and status bar. Use the Explorer to switch projects. Choose **Open Folder**, enter a workspace name, and provide an existing absolute directory. The workspace-root dialog includes **Browse…**, which opens the native Windows folder picker and writes the selected folder back into the path field. Use **+ New Tab**, **Split Right**, or **Split Down** to arrange terminals. Drag a divider to resize panes, and click a pane's header to focus it. Right-click a tab to rename or close it.
+Build output is written to `build\bin`:
 
-**Command Palette** opens the searchable palette, using VS Code-style command names such as `Terminal: Split Right` and `Workspace: Change Workspace Folder`. Changing a workspace root affects future terminals; it does not change a running shell's directory. Interactive PowerShell and Git Bash panes report their current folder so it can be restored independently per pane.
+- `paneacea.exe` — Wails desktop application
+- `paneacea-runtime.exe` — Go runtime
+- `paneacea-cli.exe` — developer protocol CLI
 
-Open **Preferences: Open Settings** to view the detected shell paths and choose **Default shell**. Paneacea stores the selected executable and arguments in the runtime settings record so new terminals use the same profile after restart.
+Launch an existing build with:
+
+```powershell
+.\build\bin\paneacea.exe
+```
+
+Keep all three executables in the same directory. A separately installed Wails CLI is not required. The build script uses the workspace-local Go toolchain when available and otherwise uses Go from `PATH`.
+
+## Usage
+
+After launch, create a workspace, choose its root folder, and open a terminal tab. The first launch detects Git Bash, PowerShell 7, Windows PowerShell, and Command Prompt. Use Settings to choose the default shell, font size, scrollback, appearance, and custom keybindings.
+
+Use the command palette (`Ctrl+Shift+P`) for commands such as `Terminal: Split Right` and `Workspace: Change Workspace Folder`. Changing a workspace root affects future terminals; it does not change the directory of a running shell.
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+Tab | Next tab |
-| Ctrl+Shift+Tab | Previous tab |
-| Ctrl+Alt+Tab | Next workspace |
-| Ctrl+Alt+Shift+Tab | Previous workspace |
-| Ctrl+Alt+R | Rename workspace |
-| Ctrl+T | New tab |
-| Ctrl+W | Close current tab |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
+| Ctrl+Alt+Tab / Ctrl+Alt+Shift+Tab | Next / previous workspace |
 | Ctrl+N | New workspace |
-| Ctrl+\` | Focus terminal pane |
-| Ctrl++ | Increase terminal font size |
-| Ctrl+- | Decrease terminal font size |
+| Ctrl+Alt+R | Rename workspace |
+| Ctrl+T / Ctrl+Shift+T | New tab |
+| Ctrl+W | Close current tab and its panes |
+| Ctrl+Shift+W | Close the focused pane |
+| Ctrl+backtick | Focus the terminal pane |
+| Ctrl++ / Ctrl+- | Increase / decrease terminal font size |
 | Ctrl+Mouse Wheel | Change terminal font size |
-| Ctrl+? | Keyboard shortcuts popup |
-| Ctrl+Shift+T | New tab |
-| Ctrl+Shift+W | Close focused pane |
+| Ctrl+? | Keyboard shortcut help |
+| Ctrl+, | Settings |
 | Ctrl+Shift+P | Command palette |
 | Alt+Shift+D | Automatic split direction |
-| Alt+Shift+Minus | Split down |
-| Alt+Shift+Plus | Split right |
-| Alt+Arrow | Directional pane focus |
-| Alt+Shift+Arrow | Resize nearest split in that direction |
+| Alt+Shift++ / Alt+Shift+- | Split right / down |
+| Alt+Arrow | Move focus between panes |
+| Alt+Shift+Arrow | Resize the nearest split |
+| Ctrl+C | Copy selected text, or interrupt the terminal |
 
-Closing a pane, tab, or workspace terminates its shells and removes the corresponding saved layout. Closing the main window preserves sessions. If a shell exits, its pane remains visible until you close it or open a new tab.
+Double-click a tab to rename it, drag tabs to reorder them, and right-click for tab actions. Drag splitters to resize panes. Closing the main window leaves terminal sessions running; closing a pane, tab, or workspace terminates its owned sessions.
 
-## Persistence and runtime
+## Runtime and persistence
 
-By default, the directory containing `Paneacea.App.exe` is the portable data root. `paneacea.db`, its SQLite WAL companion files, and the `settings` table all live directly under that root. Logs are written under `<root>\logs\`. The per-user pipe is `paneacea-<sanitized username>`, with access restricted to the owning user and remote clients rejected. Layout and per-pane state are restored when the app reconnects to the same data directory and user-owned runtime.
+The Go runtime owns ConPTY, terminal screen emulation, process monitoring, and persistence. The Wails bridge forwards application requests to the runtime. Closing the GUI detaches the interface without terminating terminal processes, so reopening the app can reconnect to the same sessions.
 
-To keep development data inside this repository and isolate it from other instances:
-
-```powershell
-$env:PANEACEA_DATA = Join-Path $PWD '.data/dev'
-$env:PANEACEA_PIPE = 'paneacea-dev'
-& ./portable-release/Paneacea.App.exe
-```
-
-You can also start the runtime directly:
+Runtime data is stored in `%APPDATA%\Paneacea\go-runtime\paneacea.db`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
 
 ```powershell
-./target/debug/panacea-runtime.exe --pipe paneacea-dev --data .data/dev
+$env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'
+.\build\bin\paneacea.exe
 ```
 
-Use one runtime per data directory. To shut it down, first close its workspaces if you want to end and forget their sessions, then end that runtime process. Ending the runtime with saved workspaces still present causes those shells to be relaunched next time. The runtime does not automatically stop when the final window closes.
+The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A full runtime restart restores saved workspace, tab, pane, and launch configuration and starts fresh shell processes.
 
-Two forms of persistence have different guarantees:
+## Developer CLI
 
-- **GUI detach:** existing processes and their in-memory state survive. Reattachment reconstructs the current screen from a bounded runtime terminal model.
-- **Runtime restart or reboot:** saved layouts, split ratios, pane folders, terminal dimensions, and encrypted terminal history are restored per pane. Panes reopen at the top of their restored history; scrollbar positions are not persisted. The shell process is relaunched in the saved folder; shell variables, running jobs, and live full-screen application processes are not resumed.
+Build the application first, then use the CLI while the runtime is available:
 
-Saved terminal history is configured in Settings with Off, 500, 2,000, 5,000, 10,000, and 25,000-line presets. History is encrypted with Windows DPAPI for the current Windows user. Off removes persisted history while leaving the current runtime's in-memory terminal behavior available.
+```powershell
+.\build\bin\paneacea-cli.exe workspace list
+.\build\bin\paneacea-cli.exe workspace create Project C:\dev\project
+.\build\bin\paneacea-cli.exe workspace switch Project
+.\build\bin\paneacea-cli.exe tab create
+.\build\bin\paneacea-cli.exe pane split --right
+.\build\bin\paneacea-cli.exe agent list
+```
 
-When diagnosing restore problems, inspect `logs\paneacea-runtime.log` and `logs\paneacea-app.log` under the portable root (or under the `PANEACEA_DATA` root when that variable is set). Both logs include restore paths, state counts, pane IDs, history-row outcomes, and attach metadata, but never terminal input or saved terminal text. Set `PANEACEA_LOG` to override the application log path.
+The CLI also accepts a protocol method and JSON parameters directly. See [doc/protocol.md](doc/protocol.md) for the available methods and request fields.
+
+```powershell
+.\build\bin\paneacea-cli.exe tab.create '{"workspaceId":"ID","executable":"cmd.exe","arguments":[]}'
+```
 
 ## Tests
 
-```powershell
-./scripts/test.ps1
-```
-
-The Rust tests cover layout edits, malformed IPC frames, encrypted SQLite history round trips, terminal query and OSC 7 handling, shell title mapping, and integration tests using real PowerShell/ConPTY and Git Bash sessions. The integration tests exercise per-pane folders and history, live viewport behavior, default-shell settings, detached output, stable process identity, nested splits, runtime restart, launch flags, and close operations. C# tests cover layout geometry, protocol handling, shell discovery, and saved-history settings. An offscreen WPF smoke test loads the native renderer, opens and closes Settings, and exercises terminal input/output, splits, resizing, focus, tabs, reconnect, scrollbar behavior, and window closure. It requires a Windows desktop session. Tests use unique pipe names and leave their databases under ignored `.data` directories for inspection.
-
-## Developer protocol CLI
-
-With the runtime running:
+Run the Go and frontend validation from the repository root:
 
 ```powershell
-./target/debug/paneacea.exe workspace.list
-./target/debug/paneacea.exe --pipe paneacea-dev state.get
+.\scripts\test-wails.ps1
 ```
 
-The CLI accepts a protocol method and an optional JSON object. See [doc/protocol.md](doc/protocol.md) for request fields and examples.
+For the browser interaction suite, run `npm run test:browser` from `frontend`. It covers terminal rendering, splitting, resizing, tab renaming, settings, and the command palette through a mocked Wails bridge.
 
 ## Architecture
 
 ```text
-Paneacea.App.exe (WPF + Microsoft.Terminal.Wpf)
-                  |
-          per-user named pipe
-                  |
-       panacea-runtime.exe (Rust + Tokio)
-            |                 |
-      portable-pty          SQLite
-          ConPTY
-            |
-        Git Bash / pwsh / Windows PowerShell / cmd
+paneacea.exe (Wails + Svelte)
+          |
+  per-user named pipe
+          |
+paneacea-runtime.exe (Go)
+      |             |
+   ConPTY        SQLite
+      |
+Git Bash / pwsh / Windows PowerShell / cmd
 ```
 
-`src/Terminal.Core` contains C# protocol models, the pipe client, layout geometry, and Windows shell discovery. `src/TerminalApp` contains the WPF client. `src/paneacea-runtime` contains the runtime, SQLite store, split tree, terminal model, and developer CLI. The runtime binary is `panacea-runtime.exe`. The GUI creates render controls only for the selected tab; hidden panes remain runtime sessions.
-
-The full roadmap remains in [doc/plan.md](doc/plan.md).
+See [Wails implementation, architecture, CLI, and validation](doc/wails-implementation.md), [the Wails plan](doc/panacea-plan-wails.md), and [the protocol reference](doc/protocol.md).
