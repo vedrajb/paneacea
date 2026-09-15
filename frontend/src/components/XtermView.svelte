@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
+  import { WebglAddon } from "@xterm/addon-webgl";
   import { bridge, bytes, call, type Settings } from "../services/backend";
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
   export let id: string;
@@ -21,6 +22,7 @@
   }
   onMount(() => {
     const streamID = crypto.randomUUID();
+    const terminalParameters = new URLSearchParams(window.location.search);
     let disposed = false,
       sequence = 0,
       queued = 0;
@@ -29,6 +31,11 @@
       scrollback: settings.scrollback,
       fontSize: settings.fontSize,
       fontFamily: '"Cascadia Mono",Consolas,monospace',
+      fontWeight: "400",
+      fontWeightBold: "600",
+      letterSpacing: 0,
+      lineHeight: 1.0,
+      customGlyphs: terminalParameters.get("customGlyphs") !== "false",
       cursorBlink: false,
       theme: {
         background: "#1e1e1e",
@@ -39,6 +46,59 @@
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host);
+    let webgl: WebglAddon | undefined;
+    let webglContextLoss: { dispose: () => void } | undefined;
+    let webglUnavailable = false;
+    function disposeWebgl() {
+      webglContextLoss?.dispose();
+      webglContextLoss = undefined;
+      webgl?.dispose();
+      webgl = undefined;
+    }
+    function updateRenderer() {
+      const screen = terminal.element?.querySelector(".xterm-screen");
+      if (!screen || !terminal.cols) return;
+      const rect = screen.getBoundingClientRect();
+      const cssCellWidth = rect.width / terminal.cols;
+      const deviceCellWidth = cssCellWidth * window.devicePixelRatio;
+      const renderer = terminalParameters.get("renderer") ?? "auto";
+      const useWebgl = renderer !== "dom";
+      if (useWebgl && !webgl && !webglUnavailable) {
+        const addon = new WebglAddon();
+        try {
+          terminal.loadAddon(addon);
+          webgl = addon;
+          webglContextLoss = addon.onContextLoss(() => {
+            disposeWebgl();
+            webglUnavailable = true;
+            host.dataset.renderer = "dom";
+          });
+        } catch {
+          addon.dispose();
+          webglUnavailable = true;
+        }
+      } else if (!useWebgl && webgl) {
+        disposeWebgl();
+      }
+      host.dataset.renderer = webgl ? "webgl" : "dom";
+      if (terminalParameters.has("terminalMetrics")) {
+        console.table({
+          renderer: host.dataset.renderer,
+          dpr: window.devicePixelRatio,
+          width: rect.width,
+          height: rect.height,
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cssCellWidth,
+          deviceCellWidth,
+          cssCellHeight: rect.height / terminal.rows,
+          deviceCellHeight:
+            (rect.height / terminal.rows) * window.devicePixelRatio,
+        });
+      }
+    }
+    fit.fit();
+    updateRenderer();
     const queryHandlers = [
       ...[
         { final: "n" },
@@ -90,6 +150,7 @@
       timer = setTimeout(() => {
         if (disposed || host.clientWidth < 20 || host.clientHeight < 20) return;
         fit.fit();
+        updateRenderer();
         if (terminal.cols !== columns || terminal.rows !== rows) {
           columns = terminal.cols;
           rows = terminal.rows;
@@ -101,6 +162,7 @@
     }
     const observer = new ResizeObserver(resize);
     fitTerminal = resize;
+    window.addEventListener("resize", resize);
     const focusTerminal = () => terminal.focus();
     host.addEventListener("paneacea-focus", focusTerminal);
     const wheel = (event: WheelEvent) => handleWheel(event, execute);
@@ -120,7 +182,10 @@
               terminal.resize(output.columns, output.rows);
           }
           sequence = output.sequence;
-          if (output.data) await write(bytes(output.data));
+          if (output.data) {
+            await write(bytes(output.data));
+            host.dataset.outputSequence = String(sequence);
+          }
           if (output.snapshot) resize();
           if (output.exited) {
             await write(
@@ -141,9 +206,11 @@
       fitTerminal = () => {};
       host.removeEventListener("paneacea-focus", focusTerminal);
       host.removeEventListener("wheel", wheel, true);
+      window.removeEventListener("resize", resize);
       observer.disconnect();
       data.dispose();
       queryHandlers.forEach((handler) => handler.dispose());
+      disposeWebgl();
       terminal.dispose();
       void bridge().Detach(streamID);
     };

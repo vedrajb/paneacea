@@ -9,6 +9,32 @@ import (
 )
 
 func shellIntegration(executable string, arguments []string, environment map[string]string) []string {
+	termSet := false
+	for name, value := range environment {
+		if strings.EqualFold(name, "TERM") {
+			termSet = true
+			if value == "" || strings.EqualFold(value, "dumb") {
+				environment[name] = "xterm-256color"
+			}
+			break
+		}
+	}
+	if !termSet {
+		environment["TERM"] = "xterm-256color"
+	}
+	colorSet := false
+	for name, value := range environment {
+		if strings.EqualFold(name, "COLORTERM") {
+			colorSet = true
+			if value == "" {
+				environment[name] = "truecolor"
+			}
+			break
+		}
+	}
+	if !colorSet {
+		environment["COLORTERM"] = "truecolor"
+	}
 	name := strings.ToLower(filepath.Base(executable))
 	for _, arg := range arguments {
 		switch strings.ToLower(arg) {

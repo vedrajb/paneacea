@@ -231,9 +231,20 @@ func updatePseudoConsoleAttribute(list *windows.ProcThreadAttributeList, pseudo 
 
 func environmentBlock(overrides map[string]string) ([]uint16, error) {
 	values := map[string]string{}
+	noColorOverride := false
+	for key := range overrides {
+		if strings.EqualFold(key, "NO_COLOR") {
+			noColorOverride = true
+			break
+		}
+	}
 	for _, entry := range os.Environ() {
 		if index := strings.Index(entry, "="); index > 0 {
-			values[strings.ToUpper(entry[:index])] = entry[index+1:]
+			key := entry[:index]
+			if strings.EqualFold(key, "NO_COLOR") && !noColorOverride {
+				continue
+			}
+			values[strings.ToUpper(key)] = entry[index+1:]
 		}
 	}
 	for key, value := range overrides {

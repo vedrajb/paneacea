@@ -158,9 +158,40 @@ test.beforeEach(async ({ page }) => {
           ) => {
             if (!streams.has(streamID)) {
               streams.add(streamID);
+              calls.push({ method: "terminal.output", id });
+              const modelStart = " model:      ";
+              const modelValue = "gpt-5.6-luna max";
+              const modelGap = "   ";
+              const modelHint = "/model to change";
+              const modelHintOutput =
+                "\x1b[38;5;6m\x1b[22m/model\x1b[m\x1b[2m to change";
+              const titleStart = " >_ ";
+              const titleName = "OpenAI Codex";
+              const titleVersion = " (v0.154.0)";
+              const directoryStart = " directory: ";
+              const directoryValue = "~\\workspace\\ai\\paneacea";
+              const modelPadding = " ".repeat(
+                68 -
+                  modelStart.length -
+                  modelValue.length -
+                  modelGap.length -
+                  modelHint.length,
+              );
+              const panel = [
+                `\x1b[2m╭${"─".repeat(68)}╮\x1b[22m`,
+                `\x1b[2m│${titleStart}\x1b[22m\x1b[1m${titleName}\x1b[22m\x1b[2m${titleVersion}${" ".repeat(68 - titleStart.length - titleName.length - titleVersion.length)}│\x1b[22m`,
+                `\x1b[2m│${"".padEnd(68)}│\x1b[22m`,
+                `\x1b[2m│${modelStart}\x1b[22m${modelValue}\x1b[2m${modelGap}\x1b[22m${modelHintOutput}${modelPadding}│\x1b[2m`,
+                `\x1b[2m│${directoryStart}\x1b[22m${directoryValue}\x1b[2m${" ".repeat(68 - directoryStart.length - directoryValue.length)}│\x1b[22m`,
+                `\x1b[2m╰${"─".repeat(68)}╯\x1b[22m`,
+              ].join("\r\n");
               return {
                 data: btoa(
-                  "\x1b[32mPaneacea runtime connected\x1b[0m\r\nPS C:\\dev\\paneacea> ",
+                  String.fromCharCode(
+                    ...new TextEncoder().encode(
+                      `${panel}\x1b[0m\r\n\x1b[32mPaneacea runtime connected\x1b[0m\r\nPS C:\\dev\\paneacea> `,
+                    ),
+                  ),
                 ),
                 sequence: 100,
                 exited: false,
@@ -227,6 +258,173 @@ test("renders terminal, splits, resizes, and renames a tab", async ({
     path: "../.build-validation/paneacea-workbench.png",
   });
   expect(errors).toEqual([]);
+});
+
+test("renders the Codex startup border without dashed cell gaps", async ({
+  page,
+}) => {
+  await page.goto("/?renderer=auto&customGlyphs=true");
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-output-sequence",
+    "100",
+  );
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-renderer",
+    "webgl",
+  );
+  const screen = await page.locator(".xterm-screen").boundingBox();
+  expect(screen).not.toBeNull();
+  await expect(page).toHaveScreenshot("codex-startup-border.png", {
+    clip: {
+      x: Math.floor(screen!.x),
+      y: Math.floor(screen!.y),
+      width: Math.min(Math.floor(screen!.width), 640),
+      height: Math.min(Math.floor(screen!.height), 125),
+    },
+    maxDiffPixelRatio: 0.001,
+  });
+});
+
+test.describe("high-DPI terminal rendering", () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  test("keeps WebGL selected at 200% and captures the DOM comparison", async ({
+    page,
+  }) => {
+    await page.goto("/?renderer=auto&terminalMetrics");
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-output-sequence",
+      "100",
+    );
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-renderer",
+      "webgl",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as any).testCalls.some(
+            (entry: any) => entry.method === "terminal.resize",
+          ),
+        ),
+      )
+      .toBe(true);
+    await page.goto("/?renderer=dom");
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-output-sequence",
+      "100",
+    );
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-renderer",
+      "dom",
+    );
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(page.locator(".xterm-screen")).toHaveScreenshot(
+      "codex-startup-border-200-percent.png",
+      { maxDiffPixelRatio: 0.001 },
+    );
+  });
+});
+
+test("compares WebGL font glyphs on the Codex startup border", async ({
+  page,
+}) => {
+  await page.goto("/?renderer=webgl&customGlyphs=false");
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-output-sequence",
+    "100",
+  );
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-renderer",
+    "webgl",
+  );
+  const screen = await page.locator(".xterm-screen").boundingBox();
+  expect(screen).not.toBeNull();
+  await expect(page).toHaveScreenshot("codex-startup-border-webgl-font.png", {
+    clip: {
+      x: Math.floor(screen!.x),
+      y: Math.floor(screen!.y),
+      width: Math.min(Math.floor(screen!.width), 640),
+      height: Math.min(Math.floor(screen!.height), 125),
+    },
+    maxDiffPixelRatio: 0.001,
+  });
+});
+
+test("compares the DOM renderer on the Codex startup border", async ({
+  page,
+}) => {
+  await page.goto("/?renderer=dom");
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-output-sequence",
+    "100",
+  );
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-renderer",
+    "dom",
+  );
+  const screen = await page.locator(".xterm-screen").boundingBox();
+  expect(screen).not.toBeNull();
+  await expect(page).toHaveScreenshot("codex-startup-border-dom.png", {
+    clip: {
+      x: Math.floor(screen!.x),
+      y: Math.floor(screen!.y),
+      width: Math.min(Math.floor(screen!.width), 640),
+      height: Math.min(Math.floor(screen!.height), 125),
+    },
+    maxDiffPixelRatio: 0.001,
+  });
+});
+
+test.describe("fractional-DPI terminal rendering", () => {
+  test.use({ deviceScaleFactor: 1.25 });
+
+  test("keeps WebGL selected at 125% and captures the DOM comparison", async ({
+    page,
+  }) => {
+    await page.goto("/?renderer=auto&terminalMetrics");
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-output-sequence",
+      "100",
+    );
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-renderer",
+      "webgl",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as any).testCalls.some(
+            (entry: any) => entry.method === "terminal.resize",
+          ),
+        ),
+      )
+      .toBe(true);
+    await page.goto("/?renderer=dom");
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-output-sequence",
+      "100",
+    );
+    await expect(page.locator(".xterm-host")).toHaveAttribute(
+      "data-renderer",
+      "dom",
+    );
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(page.locator(".xterm-screen")).toHaveScreenshot(
+      "codex-startup-border-auto-125-percent.png",
+      { maxDiffPixelRatio: 0.001 },
+    );
+  });
 });
 
 test("terminal shortcuts work once and modal focus stays usable", async ({
