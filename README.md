@@ -173,4 +173,4 @@ paneacea-runtime.exe (Go)
 Git Bash / pwsh / Windows PowerShell / cmd
 ```
 
-See [Wails implementation, architecture, CLI, and validation](doc/wails-implementation.md), [the Wails plan](doc/panacea-plan-wails.md), and [the protocol reference](doc/protocol.md).
+See [Wails implementation, architecture, CLI, and validation](doc/wails-implementation.md), the [terminal rendering implementation](doc/paneacea-terminal-rendering.md), [the Wails plan](doc/panacea-plan-wails.md), and [the protocol reference](doc/protocol.md).

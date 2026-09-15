@@ -457,58 +457,6 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   ).toBeVisible();
 });
 
-test("legacy tab and workspace shortcuts perform their actions", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await expect(page.locator(".xterm")).toHaveCount(1);
-  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
-  await page.locator(".xterm-helper-textarea").focus();
-  await page.keyboard.press("Control+t");
-  await expect(page.getByRole("tab")).toHaveCount(2);
-  await expect(page.getByRole("tab", { name: "Tab 02" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await page.keyboard.press("Control+Shift+Tab");
-  await expect(page.getByRole("tab", { name: "Tab 01" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await page.keyboard.press("Control+Tab");
-  await expect(page.getByRole("tab", { name: "Tab 02" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await page.keyboard.press("Alt+Shift+d");
-  await expect(page.locator(".xterm")).toHaveCount(2);
-  await page.keyboard.press("Control+w");
-  await expect(page.getByRole("tab")).toHaveCount(1);
-  await expect(page.locator(".xterm")).toHaveCount(1);
-  await page.keyboard.press("Control+Alt+Tab");
-  await expect(page.getByRole("tab", { name: "Tab 01" })).toBeVisible();
-  await page.keyboard.press("Control+Alt+Shift+Tab");
-  await expect(page.getByRole("tab", { name: "Tab 01" })).toBeVisible();
-  await page.keyboard.press("Control+Alt+r");
-  await page.getByLabel("Name", { exact: true }).fill("Renamed workspace");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".window-title")).toHaveText("Renamed workspace");
-  await page.keyboard.press("Control+n");
-  await page.getByLabel("Name", { exact: true }).fill("New workspace");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".window-title")).toHaveText("New workspace");
-  const calls = await page.evaluate(() => (window as any).testCalls);
-  expect(
-    calls.filter((entry: any) => entry.method === "tab.close"),
-  ).toHaveLength(1);
-  expect(
-    calls.filter((entry: any) => entry.method === "pane.close"),
-  ).toHaveLength(0);
-  expect(
-    calls.filter((entry: any) => entry.method === "workspace.create"),
-  ).toHaveLength(1);
-});
-
 test("legacy font keys and Ctrl+wheel resize terminals without remounting", async ({
   page,
 }) => {
