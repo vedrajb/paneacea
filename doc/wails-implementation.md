@@ -8,13 +8,30 @@ Requirements: Windows 10 1809 or later, WebView2 Runtime, Go 1.24.2 or newer, an
 
 From the repository root:
 
-Double-click `build-wails.bat` to build and launch, or run `build-wails.bat --build-only` to build without opening the app.
+Double-click `run.bat` to build and launch, or run `build.bat` to build without opening the app. Both default to the `Release` configuration; pass `Debug` or `Release` to select a configuration.
 
 ```powershell
-.\scripts\build-wails.ps1 -Run
+.\scripts\build-wails.ps1 -Configuration Release -Run
 ```
 
-Or launch an existing build:
+The build creates a portable package at `portable-release` with this layout:
+
+```text
+portable-release/
+├── exes/
+│   ├── paneacea.exe
+│   ├── paneacea-runtime.exe
+│   └── paneacea-cli.exe
+├── Logs/
+├── config.toml
+└── pca.cmd
+```
+
+`config.toml` is seeded with default user settings and is preserved across rebuilds. Launch the packaged app from a terminal with `.\portable-release\pca.cmd`.
+
+To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `portable-release.zip`.
+
+Or launch the intermediate build:
 
 ```powershell
 .\build\bin\paneacea.exe

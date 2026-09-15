@@ -29,29 +29,58 @@ npm run install:all
 From the repository root, build and launch the application with:
 
 ```powershell
-.\build.bat
+.\run.bat
 ```
 
 Build without launching:
 
 ```powershell
-.\build.bat --build-only
+.\build.bat
 ```
+
+Both commands default to the `Release` configuration. Pass `Debug` or `Release` as the first argument to select a configuration.
+
+To recreate the portable package from scratch and create a zip archive, run:
+
+```powershell
+.\package.bat
+```
+
+This recreates `portable-release` and writes `portable-release.zip`.
 
 The PowerShell build script can also be run directly. Omit `-Run` to build without launching:
 
 ```powershell
-.\scripts\build-wails.ps1
-.\scripts\build-wails.ps1 -Run
+.\scripts\build-wails.ps1 -Configuration Release
+.\scripts\build-wails.ps1 -Configuration Release -Run
 ```
 
-Build output is written to `build\bin`:
+The build writes intermediate executables to `build\bin` and creates the portable package at `portable-release`:
+
+```text
+portable-release/
+├── exes/
+│   ├── paneacea.exe
+│   ├── paneacea-runtime.exe
+│   └── paneacea-cli.exe
+├── Logs/
+├── config.toml
+└── pca.cmd
+```
+
+`config.toml` is seeded with default user settings and is preserved when the package is rebuilt. Launch the packaged app from a terminal with:
+
+```powershell
+.\portable-release\pca.cmd
+```
+
+The intermediate build output contains:
 
 - `paneacea.exe` — Wails desktop application
 - `paneacea-runtime.exe` — Go runtime
 - `paneacea-cli.exe` — developer protocol CLI
 
-Launch an existing build with:
+Launch the intermediate build directly with:
 
 ```powershell
 .\build\bin\paneacea.exe
