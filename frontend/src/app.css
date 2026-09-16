@@ -290,6 +290,17 @@ main {
 .xterm {
   height: 100%;
 }
+.xterm .xterm-viewport {
+  background: #1e1e1e !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 6px !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: 1px !important;
+  width: 4px !important;
+  border-radius: 3px;
+}
 .split {
   height: 100%;
   display: flex;

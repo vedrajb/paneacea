@@ -50,6 +50,22 @@ test.beforeEach(async ({ page }) => {
       },
     };
     const calls: any[] = [];
+    const focusRace: any = { paneFocusReleases: [] };
+    if (window.location.search.includes("startupFirstPane")) {
+      const tab = state.workspaces[0].tabs[0];
+      state.panes["p-second"] = {
+        ...state.panes.p,
+        id: "p-second",
+        pid: 124,
+      };
+      tab.activePaneId = "p-second";
+      tab.rootLayoutNode = {
+        orientation: "vertical",
+        ratio: 0.5,
+        first: { paneId: "p" },
+        second: { paneId: "p-second" },
+      };
+    }
     state.workspaces.push({
       id: "other",
       name: "Other workspace",
@@ -73,6 +89,7 @@ test.beforeEach(async ({ page }) => {
       pid: 125,
     };
     (window as any).testCalls = calls;
+    (window as any).testFocusRace = focusRace;
     const streams = new Set<string>();
     window.go = {
       desktop: {
@@ -149,7 +166,20 @@ test.beforeEach(async ({ page }) => {
               tab.rootLayoutNode.ratio = params.ratio;
             }
             if (method !== "state.get") state.revision++;
-            return structuredClone(state);
+            const result = structuredClone(state);
+            if (method === "state.get" && focusRace.holdStateGet) {
+              focusRace.stateGetWaiting = true;
+              await new Promise<void>((resolve) => {
+                focusRace.releaseStateGet = resolve;
+              });
+            }
+            if (method === "pane.focus" && focusRace.holdPaneFocus) {
+              focusRace.paneFocusWaiting = true;
+              await new Promise<void>((resolve) => {
+                focusRace.paneFocusReleases.push(resolve);
+              });
+            }
+            return result;
           },
           ReadOutput: async (
             streamID: string,
@@ -455,6 +485,73 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   await expect(
     page.getByRole("button", { name: "Terminal: Rename Tab" }),
   ).toBeVisible();
+});
+
+test("focuses the selected tab's first pane after startup", async ({ page }) => {
+  await page.goto("/?startupFirstPane");
+  const firstTerminal = page.locator(
+    '[data-pane="p"] .xterm-helper-textarea',
+  );
+  await expect(firstTerminal).toBeFocused();
+  await page.getByTitle("Settings", { exact: true }).focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(firstTerminal).toBeFocused();
+  await page.getByTitle("Settings", { exact: true }).focus();
+  await page.keyboard.press("Control+`");
+  await expect(firstTerminal).toBeFocused();
+});
+
+test("keeps the clicked pane active when a stale refresh arrives", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTitle("Split right", { exact: true }).click();
+  const panes = page.locator(".pane");
+  await expect(panes).toHaveCount(2);
+  await page.evaluate(() => {
+    (window as any).testFocusRace.holdStateGet = true;
+    (window as any).testFocusRace.holdPaneFocus = true;
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).testFocusRace.stateGetWaiting))
+    .toBe(true);
+  await panes.first().locator(".xterm-helper-textarea").focus();
+  await expect(panes.first()).toHaveClass(/active/);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).testFocusRace.paneFocusWaiting))
+    .toBe(true);
+  await page.evaluate(() => {
+    const focusRace = (window as any).testFocusRace;
+    focusRace.holdStateGet = false;
+    focusRace.releaseStateGet();
+  });
+  await expect(panes.first()).toHaveClass(/active/);
+  await page.evaluate(() => {
+    const focusRace = (window as any).testFocusRace;
+    focusRace.holdPaneFocus = false;
+    focusRace.paneFocusReleases.splice(0).forEach((resolve: () => void) =>
+      resolve(),
+    );
+  });
+});
+
+test("matches the terminal viewport to the terminal background", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator(".xterm-viewport")).toHaveCSS(
+    "background-color",
+    "rgb(30, 30, 30)",
+  );
+});
+
+test("uses a compact rounded terminal scrollbar", async ({ page }) => {
+  await page.goto("/");
+  const slider = page.locator(
+    ".xterm-scrollable-element > .scrollbar.vertical > .slider",
+  );
+  await expect(slider).toHaveCSS("width", "4px");
+  await expect(slider).toHaveCSS("border-top-left-radius", "3px");
 });
 
 test("has no sidebar and keeps Settings in the title bar's top-right corner", async ({

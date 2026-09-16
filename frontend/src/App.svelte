@@ -65,6 +65,7 @@
   let shortcutsOpen = false;
   let fontChanges: Promise<void> = Promise.resolve();
   let startupFocusPending = true;
+  let focusGeneration = 0;
   $: workspace = state?.workspaces.find(
     (w) => w.id === state?.activeWorkspaceId,
   );
@@ -79,37 +80,45 @@
     errorMessage = message;
   }
   function apply(next: State) {
-    if (!state || next.revision >= state.revision) state = next;
+    if (!state || next.revision > state.revision) state = next;
     connected = true;
   }
-  async function focusActiveTerminal(): Promise<boolean> {
+  function firstPaneId(): string | undefined {
+    let node = tab?.rootLayoutNode;
+    while (node && !node.paneId) node = node.first ?? node.second;
+    return node?.paneId;
+  }
+  async function focusActiveTerminal(
+    paneId = tab?.activePaneId,
+  ): Promise<boolean> {
     await tick();
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => resolve()),
     );
-    const paneId = tab?.activePaneId;
     if (!paneId) return false;
     const host = document.querySelector<HTMLElement>(
       `[data-pane="${paneId}"] .xterm-host`,
     );
-    if (host) {
-      host.dispatchEvent(new Event("paneacea-focus"));
-      host
-        .querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
-        ?.focus({ preventScroll: true });
-      return true;
-    }
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      `[data-pane="${paneId}"] .xterm-helper-textarea`,
+    const textarea = host?.querySelector<HTMLTextAreaElement>(
+      ".xterm-helper-textarea",
     );
-    if (!textarea) return false;
+    if (!host || !textarea) return false;
+    host.dispatchEvent(new Event("paneacea-focus"));
     textarea.focus({ preventScroll: true });
-    return true;
+    return document.hasFocus() && document.activeElement === textarea;
+  }
+  async function focusFirstPaneOnStartup(): Promise<boolean> {
+    const paneId = firstPaneId();
+    if (!paneId) return false;
+    if (tab?.activePaneId !== paneId) await mutate("pane.focus", { paneId });
+    return focusActiveTerminal(paneId);
   }
   async function refresh() {
     try {
-      apply(await call("state.get"));
-      if (startupFocusPending && (await focusActiveTerminal()))
+      const currentFocusGeneration = focusGeneration;
+      const next = await call<State>("state.get");
+      if (currentFocusGeneration === focusGeneration) apply(next);
+      if (startupFocusPending && (await focusFirstPaneOnStartup()))
         startupFocusPending = false;
     } catch (e) {
       connected = false;
@@ -129,6 +138,7 @@
     void mutate(method, params).catch((e) => error(String(e)));
   }
   function focus(id: string) {
+    focusGeneration++;
     if (tab) tab.activePaneId = id;
     perform("pane.focus", { paneId: id });
   }
@@ -491,6 +501,18 @@
     favicon.type = "image/svg+xml";
     favicon.href = appIconUrl;
 
+    function refocusTerminal() {
+      if (!state || !connected || busy) return;
+      if (startupFocusPending) {
+        void focusFirstPaneOnStartup().then((focused) => {
+          if (focused) startupFocusPending = false;
+        });
+      } else {
+        void focusActiveTerminal();
+      }
+    }
+    window.addEventListener("focus", refocusTerminal);
+
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -502,6 +524,7 @@
     return () => {
       stopped = true;
       clearTimeout(timer);
+      window.removeEventListener("focus", refocusTerminal);
     };
   });
 </script>

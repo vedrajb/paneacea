@@ -4,6 +4,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
   import { bridge, bytes, call, type Settings } from "../services/backend";
+  import { terminalCursorOptions } from "../services/terminalOptions";
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
   export let id: string;
   export let active: boolean;
@@ -36,9 +37,7 @@
       letterSpacing: 0,
       lineHeight: 1.0,
       customGlyphs: terminalParameters.get("customGlyphs") !== "false",
-      cursorBlink: true,
-      cursorStyle: "bar",
-      cursorWidth: 2,
+      ...terminalCursorOptions,
       theme: {
         background: "#1e1e1e",
         foreground: "#d4d4d4",
@@ -166,12 +165,16 @@
     const observer = new ResizeObserver(resize);
     fitTerminal = resize;
     window.addEventListener("resize", resize);
-    const focusTerminal = () => terminal.focus();
+    const focusTerminal = () => {
+      if (!disposed && active && document.hasFocus()) terminal.focus();
+    };
     host.addEventListener("paneacea-focus", focusTerminal);
     const wheel = (event: WheelEvent) => handleWheel(event, execute);
     host.addEventListener("wheel", wheel, { capture: true, passive: false });
     observer.observe(host);
     resize();
+    if (active)
+      requestAnimationFrame(() => requestAnimationFrame(focusTerminal));
     const write = (data: Uint8Array | string) =>
       new Promise<void>((resolve) => terminal.write(data, resolve));
     async function read() {
@@ -202,7 +205,6 @@
       }
     }
     void read();
-    if (active) terminal.focus();
     return () => {
       disposed = true;
       clearTimeout(timer);
@@ -220,4 +222,10 @@
   });
 </script>
 
-<div class="xterm-host" bind:this={host} on:focusin={focus}></div>
+<div
+  class="xterm-host"
+  bind:this={host}
+  on:focusin={() => {
+    if (!active) focus();
+  }}
+></div>
