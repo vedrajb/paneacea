@@ -34,6 +34,8 @@ The result shown above is illustrative; workspace creation returns the updated f
 | `terminal.viewport.set` | `paneId`, `offset` | Current scroll offset from the bottom |
 | `settings.set` | `key`, `value` | Full state |
 
+The desktop lifecycle uses two additional runtime methods. `agent.stop` stops active registered agent panes and marks them for restoration while leaving ordinary terminal panes running. `agent.restore` relaunches panes marked by `agent.stop`; the resumed agent is restored without sending a new prompt. These calls are intended for the GUI lifecycle and take no parameters.
+
 `tab.create` and `pane.split` accept optional `executable`, `arguments` (string array), and `environment` (string map). When `executable` is omitted, the runtime uses the persisted `settings.defaultShell` object. A new installation selects the first available profile in this order: Git Bash, PowerShell 7, Windows PowerShell, then Command Prompt. When selecting a different executable explicitly, provide its arguments, including `[]` if none. No command string is passed through an intermediate shell.
 
 The MVP settings panel stores a default shell like this:

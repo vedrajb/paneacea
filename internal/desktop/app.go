@@ -17,11 +17,15 @@ type App struct {
 }
 
 func New() *App                            { return &App{streams: map[string]*ipc.Client{}} }
-func (a *App) Startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) Startup(ctx context.Context) {
+	a.ctx = ctx
+	_, _ = a.Call("agent.restore", nil)
+}
 func (a *App) Shutdown(context.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.client != nil {
+		_, _ = a.client.Call("agent.stop", nil)
 		a.client.Close()
 		a.client = nil
 	}

@@ -130,6 +130,8 @@ $env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'
 
 The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A full runtime restart restores saved workspace, tab, pane, and launch configuration and starts fresh shell processes.
 
+Closing the Paneacea window stops active registered agent panes while leaving ordinary terminal panes running. Starting Paneacea again relaunches those agent sessions from their captured session IDs and waits for the next prompt.
+
 ## Developer CLI
 
 Build the application first, then use the CLI while the runtime is available:

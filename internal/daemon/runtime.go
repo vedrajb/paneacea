@@ -26,15 +26,18 @@ type Storage interface {
 	Save(*model.State) error
 }
 type Runtime struct {
-	mu       sync.Mutex
-	state    *model.State
-	store    Storage
-	sessions map[string]*terminal.Session
-	outputs  map[string]*outputBuffer
-	cancel   context.CancelFunc
-	done     chan struct{}
-	shutting bool
+	mu             sync.Mutex
+	state          *model.State
+	store          Storage
+	sessions       map[string]*terminal.Session
+	outputs        map[string]*outputBuffer
+	stoppingAgents map[string]bool
+	cancel         context.CancelFunc
+	done           chan struct{}
+	shutting       bool
 }
+
+const agentStoppedStatus = "agent-stopped"
 type Params struct {
 	WorkspaceID   string            `json:"workspaceId"`
 	TabID         string            `json:"tabId"`
@@ -68,7 +71,7 @@ func New(store Storage) (*Runtime, error) {
 	if state.Settings.DefaultShell.Executable == "" {
 		state.Settings.DefaultShell = firstAvailableProfile()
 	}
-	r := &Runtime{state: state, store: store, sessions: map[string]*terminal.Session{}, outputs: map[string]*outputBuffer{}, done: make(chan struct{})}
+	r := &Runtime{state: state, store: store, sessions: map[string]*terminal.Session{}, outputs: map[string]*outputBuffer{}, stoppingAgents: map[string]bool{}, done: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.mu.Lock()
@@ -184,7 +187,17 @@ func (r *Runtime) launch(p *model.Pane) error {
 	environment["PANEACEA_WORKSPACE_ID"] = p.WorkspaceID
 	executable := p.Executable
 	arguments := append([]string(nil), p.Arguments...)
-	if p.Agent != nil && p.Agent.SessionID != "" {
+	if p.Status == agentStoppedStatus {
+		if p.Agent == nil || p.Agent.SessionID == "" {
+			return fmt.Errorf("agent session metadata is unavailable")
+		}
+		ex, args, e := agents.BuildResumeCommand(p.Agent)
+		if e != nil {
+			return e
+		}
+		executable = ex
+		arguments = args
+	} else if p.Agent != nil && p.Agent.SessionID != "" {
 		if ex, args, e := agents.BuildResumeCommand(p.Agent); e == nil {
 			executable = ex
 			arguments = args
@@ -229,6 +242,10 @@ func (r *Runtime) launch(p *model.Pane) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			if r.shutting || r.outputs[p.ID] != output {
+				return
+			}
+			if r.stoppingAgents[p.ID] {
+				delete(r.stoppingAgents, p.ID)
 				return
 			}
 			if current := r.state.Panes[p.ID]; current != nil {
@@ -324,7 +341,7 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 			return nil, fmt.Errorf("terminal not found")
 		}
 		if method == "terminal.attach" || method == "terminal.requestSnapshot" {
-			return output.snapshot(), nil
+		return output.snapshot(), nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
@@ -365,6 +382,12 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 			return struct{}{}, r.store.Save(r.state)
 		}
 		return struct{}{}, nil
+	}
+	if method == "agent.stop" {
+		return r.stopAgents()
+	}
+	if method == "agent.restore" {
+		return r.restoreAgents()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -424,6 +447,115 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 		if r.state.Panes[id] == nil {
 			r.outputs[id].exit()
 			delete(r.outputs, id)
+		}
+	}
+	return clone(r.state), nil
+}
+
+func agentIsRunning(agent *model.Agent, generation string) bool {
+	return agent != nil && agent.RootPID != 0 && agent.ProcessGeneration != "" && generation != "" && agent.ProcessGeneration == generation
+}
+
+func prepareAgentStop(p *model.Pane) {
+	p.Status = agentStoppedStatus
+	p.PID = 0
+	if p.Agent != nil {
+		p.Agent.RootPID = 0
+		p.Agent.ProcessGeneration = ""
+		p.Agent.State = "idle"
+	}
+}
+
+func (r *Runtime) stopAgents() (any, error) {
+	r.mu.Lock()
+	if r.stoppingAgents == nil {
+		r.stoppingAgents = map[string]bool{}
+	}
+	before := clone(r.state)
+	sessions := map[string]*terminal.Session{}
+	for id, pane := range r.state.Panes {
+		if pane.Agent == nil || pane.Status != "running" {
+			continue
+		}
+		if !agentIsRunning(pane.Agent, process.Generation(pane.Agent.RootPID)) {
+			continue
+		}
+		if session := r.sessions[id]; session != nil {
+			r.stoppingAgents[id] = true
+			sessions[id] = session
+			prepareAgentStop(pane)
+		}
+	}
+	if len(sessions) == 0 {
+		result := clone(r.state)
+		r.mu.Unlock()
+		return result, nil
+	}
+	r.state.Revision++
+	err := r.store.Save(r.state)
+	if err != nil {
+		for id := range sessions {
+			delete(r.stoppingAgents, id)
+		}
+		r.state = before
+		r.mu.Unlock()
+		return nil, fmt.Errorf("persist agent shutdown: %w", err)
+	}
+	r.mu.Unlock()
+	for _, session := range sessions {
+		_ = session.Close()
+	}
+	r.mu.Lock()
+	result := clone(r.state)
+	r.mu.Unlock()
+	return result, nil
+}
+
+func (r *Runtime) restoreAgents() (any, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	before := clone(r.state)
+	oldSessions := map[string]*terminal.Session{}
+	oldOutputs := map[string]*outputBuffer{}
+	for id, session := range r.sessions {
+		oldSessions[id] = session
+	}
+	for id, output := range r.outputs {
+		oldOutputs[id] = output
+	}
+	changed := false
+	for _, pane := range r.state.Panes {
+		if pane.Status != agentStoppedStatus || pane.Agent == nil || pane.Agent.SessionID == "" {
+			continue
+		}
+		if r.stoppingAgents[pane.ID] {
+			continue
+		}
+		if err := r.launch(pane); err != nil {
+			pane.Status = "error"
+			pane.Error = err.Error()
+		} else {
+			pane.Error = ""
+		}
+		changed = true
+	}
+	if changed {
+		r.state.Revision++
+		if err := r.store.Save(r.state); err != nil {
+			for id, session := range r.sessions {
+				if oldSessions[id] != session {
+					go session.Close()
+				}
+			}
+			for id, output := range r.outputs {
+				if oldOutputs[id] != output {
+					output.exit()
+				}
+			}
+			r.sessions = oldSessions
+			r.outputs = oldOutputs
+			r.state = before
+			return nil, fmt.Errorf("persist agent restoration: %w", err)
 		}
 	}
 	return clone(r.state), nil

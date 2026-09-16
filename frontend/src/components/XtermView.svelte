@@ -36,7 +36,9 @@
       letterSpacing: 0,
       lineHeight: 1.0,
       customGlyphs: terminalParameters.get("customGlyphs") !== "false",
-      cursorBlink: false,
+      cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
       theme: {
         background: "#1e1e1e",
         foreground: "#d4d4d4",
@@ -107,6 +109,7 @@
         { prefix: ">", final: "c" },
         { prefix: "=", final: "c" },
         { final: "t" },
+        { intermediates: " ", final: "q" },
         { intermediates: "$", final: "p" },
         { prefix: "?", intermediates: "$", final: "p" },
       ].map((identifier) =>
