@@ -32,6 +32,7 @@ export const actions = {
   "Paneacea.Reconnect": "Paneacea: Reconnect Runtime",
   "Agent.Resume": "Agent: Resume Captured Session",
   "Help.ShowShortcuts": "Help: Keyboard Shortcuts",
+  "Paneacea.ToggleSidebar": "View: Toggle Side Bar Visibility",
 } as const;
 export type Action = keyof typeof actions;
 export const defaults: Record<string, Action> = {
@@ -40,16 +41,11 @@ export const defaults: Record<string, Action> = {
   "Ctrl+n": "Workspace.New",
   "Ctrl+`": "Terminal.Focus",
   "Ctrl+=": "Terminal.IncreaseFontSize",
-  "Ctrl++": "Terminal.IncreaseFontSize",
-  "Ctrl+Shift+=": "Terminal.IncreaseFontSize",
-  "Ctrl+Shift++": "Terminal.IncreaseFontSize",
   "Ctrl+-": "Terminal.DecreaseFontSize",
-  "Ctrl+Shift+-": "Terminal.DecreaseFontSize",
   "Ctrl+Shift+/": "Help.ShowShortcuts",
-  "Ctrl+Alt+Tab": "Workspace.Next",
-  "Ctrl+Alt+Shift+Tab": "Workspace.Previous",
+  "Ctrl+Alt+ArrowDown": "Workspace.Next",
+  "Ctrl+Alt+ArrowUp": "Workspace.Previous",
   "Ctrl+Alt+r": "Workspace.Rename",
-  "Ctrl+Shift+t": "Terminal.NewTab",
   "Ctrl+Shift+w": "Terminal.ClosePane",
   "Alt+Shift+d": "Terminal.SplitPaneAuto",
   "Alt+Shift+-": "Terminal.SplitPaneDown",
@@ -63,12 +59,18 @@ export const defaults: Record<string, Action> = {
   "Alt+Shift+ArrowLeft": "Terminal.ResizePaneLeft",
   "Alt+Shift+ArrowRight": "Terminal.ResizePaneRight",
   "Ctrl+Shift+p": "Paneacea.CommandPalette",
+  "Ctrl+b": "Paneacea.ToggleSidebar",
   "Ctrl+,": "Paneacea.Settings",
-  "Ctrl+Tab": "Terminal.NextTab",
-  "Ctrl+Shift+Tab": "Terminal.PreviousTab",
+  "Ctrl+Alt+ArrowRight": "Terminal.NextTab",
+  "Ctrl+Alt+ArrowLeft": "Terminal.PreviousTab",
 };
 export function normalize(event: KeyboardEvent): string {
   let key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (
+    event.getModifierState?.("AltGraph") &&
+    /^Key[A-Z]$/.test(event.code)
+  )
+    key = event.code.slice(3).toLowerCase();
   if (event.code === "Equal" && event.shiftKey) key = "=";
   if (event.code === "Minus" && event.shiftKey) key = "-";
   if (event.code === "NumpadAdd") key = "+";
@@ -103,8 +105,9 @@ export function resolve(
   event: KeyboardEvent,
   overrides: Record<string, string> = {},
 ): Action | null {
-  if (event.isComposing || event.getModifierState?.("AltGraph")) return null;
+  if (event.isComposing) return null;
   const action = { ...defaults, ...overrides }[normalize(event)];
+  if (event.getModifierState?.("AltGraph") && !action) return null;
   return action && action in actions ? (action as Action) : null;
 }
 export function shortcutsForAction(
@@ -141,6 +144,15 @@ export function handleKey(
     }
     return false;
   }
+  if (
+    !event.isComposing &&
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !event.metaKey &&
+    event.key.toLowerCase() === "v"
+  )
+    return false;
   const action = resolve(event, overrides);
   if (!action) return true;
   event.preventDefault();

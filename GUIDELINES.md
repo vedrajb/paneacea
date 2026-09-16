@@ -53,3 +53,10 @@
 - Preserve unrelated changes in the working tree.
 - Confirm exact targets before deleting, moving, or overwriting files.
 - Prefer recoverable operations for disruptive file changes.
+
+## Keyboard Shortcuts
+
+- priority 1: Use common popular key combinations
+- priority 2: Use VSCode key combinations
+- priority 3: Ctrl+Alt+<key>
+- priority 4: Ctrl+Alt+Shift+<key>

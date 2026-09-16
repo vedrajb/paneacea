@@ -251,6 +251,9 @@
       case "Paneacea.Settings":
         await openSettings();
         return;
+      case "Paneacea.ToggleSidebar":
+        sidebar = !sidebar;
+        return;
       case "Paneacea.Reconnect":
         generation++;
         await refresh();
@@ -451,20 +454,27 @@
   }
   function globalKey(event: KeyboardEvent) {
     if (event.defaultPrevented) return;
+    const terminalTarget =
+      event.target instanceof Element && event.target.closest(".xterm");
+    const action = resolve(event, state?.settings.keybindings);
+    if (terminalTarget) {
+      if (!action) return;
+      event.preventDefault();
+      if (!event.repeat) execute(action);
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       dismissPopups();
       return;
     }
-    if (palette || modal || confirmation || settingsOpen || shortcutsOpen || menu)
-      return;
-    const action = resolve(event, state?.settings.keybindings);
     if (action === "Terminal.Focus") {
       event.preventDefault();
       if (!event.repeat) execute(action);
       return;
     }
-    if (event.target instanceof Element && event.target.closest(".xterm"))
+    if (palette || modal || confirmation || settingsOpen || shortcutsOpen || menu)
       return;
     if (
       event.target instanceof HTMLInputElement ||
@@ -552,7 +562,8 @@
     <nav class="activity" aria-label="Activity bar">
       <button
         class:selected={sidebar}
-        title="Explorer"
+        title="Toggle Explorer (Ctrl+B)"
+        aria-label="Toggle Explorer"
         on:click={() => (sidebar = !sidebar)}>▤</button
       ><button title="New workspace" on:click={() => execute("Workspace.New")}
         >⊞</button
@@ -850,7 +861,7 @@
         ></textarea></label
       >
       <p class="hint">
-        Map a combination such as “Ctrl+Shift+t” to “Terminal.NewTab”. An empty
+        Map a combination such as “Ctrl+o” to “Terminal.NewTab”. An empty
         action disables a default. Full action names are listed below.
       </p>
       <details>

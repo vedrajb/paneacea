@@ -32,7 +32,8 @@
     <h2 id="shortcut-heading">Keyboard shortcuts</h2>
     <p>
       Current bindings, including your customizations. Ctrl+C copies selected
-      text or interrupts when nothing is selected.
+      text or interrupts when nothing is selected. Ctrl+V always pastes
+      clipboard text.
     </p>
     <table>
       <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
@@ -51,8 +52,7 @@
       </tbody>
     </table>
     <p>
-      Ctrl+= / Ctrl+Shift+= use the main + key. Ctrl++ also accepts numpad +.
-      Ctrl+Shift+/ is Ctrl+?.
+      Ctrl+= and Ctrl+- change terminal font size. Ctrl+Shift+/ is Ctrl+?.
     </p>
     <div class="dialog-actions">
       <button class="primary" on:click={close}>Close</button>

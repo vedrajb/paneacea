@@ -49,13 +49,13 @@ The runtime stores SQLite metadata under `%APPDATA%\Paneacea\go-runtime\paneacea
 - Use `Alt+Shift+D` to split automatically, `Alt+Shift++` to split right, or `Alt+Shift+-` to split down.
 - Use `Alt+Arrow` to move focus and `Alt+Shift+Arrow` to resize. Splitters also support dragging and arrow keys.
 - Double-click a tab to rename it. Drag tabs to reorder them; right-click for tab actions.
-- `Ctrl+T` or `Ctrl+Shift+T` opens a tab. `Ctrl+W` closes the entire current tab and all its panes; `Ctrl+Shift+W` closes only the focused pane.
-- `Ctrl+Tab` / `Ctrl+Shift+Tab` switch to the next / previous tab. `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` switch to the next / previous workspace.
+- `Ctrl+T` opens a tab. `Ctrl+W` closes the entire current tab and all its panes; `Ctrl+Shift+W` closes only the focused pane.
+- `Ctrl+Alt+Right` / `Ctrl+Alt+Left` switch to the next / previous tab. `Ctrl+Alt+Down` / `Ctrl+Alt+Up` switch to the next / previous workspace.
 - `Ctrl+N` creates a workspace, `Ctrl+Alt+R` renames it, and Ctrl+backtick focuses the active terminal.
-- `Ctrl++` / `Ctrl+-` change terminal font size from 8 to 32, including the main keyboard and numpad keys, with or without Shift. Ctrl+mouse wheel over a terminal also changes font size. The size is saved and applied to every terminal.
+- `Ctrl+=` increases and `Ctrl+-` decreases terminal font size from 8 to 32. Ctrl+mouse wheel over a terminal also changes font size. The size is saved and applied to every terminal.
 - `Ctrl+?` (`Ctrl+Shift+/`) opens keyboard shortcut help with current bindings and customizations. Help is also available in the command palette.
 - `Ctrl+Shift+P` opens the command palette. `Ctrl+,` opens settings.
-- Ctrl+C copies selected terminal text. With no selection it reaches the terminal as an interrupt.
+- Ctrl+C copies selected terminal text. With no selection it reaches the terminal as an interrupt. Ctrl+V always pastes clipboard text.
 - Preferences include default shell, font size, scrollback, appearance, and custom keybindings. Existing sessions retain their original launch configuration.
 
 ## Runtime and IPC

@@ -37,18 +37,55 @@ describe("terminal key ownership", () => {
     ).toBe("Terminal.SplitPaneDown");
   });
   it("allows disabling and remapping defaults", () => {
-    const event = key("T", { ctrlKey: true, shiftKey: true });
-    expect(resolve(event, { "Ctrl+Shift+t": "" })).toBeNull();
-    expect(resolve(event, { "Ctrl+Shift+t": "Workspace.New" })).toBe(
+    const event = key("t", { ctrlKey: true });
+    expect(resolve(event, { "Ctrl+t": "" })).toBeNull();
+    expect(resolve(event, { "Ctrl+t": "Workspace.New" })).toBe(
       "Workspace.New",
     );
   });
+  it("does not bind Ctrl+Shift+T to creating a tab", () => {
+    expect(resolve(key("T", { ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
+  it.each([
+    ["+", "Equal", true, true],
+    ["+", "NumpadAdd", true, false],
+    ["+", "NumpadAdd", true, true],
+    ["_", "Minus", true, true],
+  ])(
+    "does not bind the removed font shortcut %s (%s)",
+    (value, code, ctrlKey, shiftKey) => {
+      expect(resolve(key(value, { code, ctrlKey, shiftKey }))).toBeNull();
+    },
+  );
   it("does not consume composition or extra modifiers", () => {
     expect(
       resolve(key("t", { ctrlKey: true, shiftKey: true, isComposing: true })),
     ).toBeNull();
     expect(
       resolve(key("t", { ctrlKey: true, shiftKey: true, metaKey: true })),
+    ).toBeNull();
+  });
+  it("keeps registered Ctrl+Alt shortcuts usable when reported as AltGraph", () => {
+    const altGraph = (modifier: string) => modifier === "AltGraph";
+    expect(
+      resolve(
+        key("®", {
+          code: "KeyR",
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: altGraph,
+        }),
+      ),
+    ).toBe("Workspace.Rename");
+    expect(
+      resolve(
+        key("€", {
+          code: "KeyE",
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: altGraph,
+        }),
+      ),
     ).toBeNull();
   });
   it("copies selection without interrupting, including failure", async () => {
@@ -87,7 +124,7 @@ describe("terminal key ownership", () => {
       const execute = vi.fn();
       expect(
         handleKey(
-          key("t", { ctrlKey: true, shiftKey: true, ...overrides }),
+          key("t", { ctrlKey: true, ...overrides }),
           { hasSelection: () => false, getSelection: () => "" },
           execute,
           vi.fn(),
@@ -102,10 +139,7 @@ describe("terminal key ownership", () => {
 
 describe("command palette shortcuts", () => {
   it("returns every default binding for an action", () => {
-    expect(shortcutsForAction("Terminal.NewTab")).toEqual([
-      "Ctrl+t",
-      "Ctrl+Shift+t",
-    ]);
+    expect(shortcutsForAction("Terminal.NewTab")).toEqual(["Ctrl+t"]);
   });
   it("reflects disabled and custom bindings", () => {
     expect(
@@ -113,6 +147,6 @@ describe("command palette shortcuts", () => {
         "Ctrl+t": "",
         "Ctrl+o": "Terminal.NewTab",
       }),
-    ).toEqual(["Ctrl+Shift+t", "Ctrl+o"]);
+    ).toEqual(["Ctrl+o"]);
   });
 });

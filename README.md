@@ -96,24 +96,36 @@ Use the command palette (`Ctrl+Shift+P`) for commands such as `Terminal: Split R
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
-| Ctrl+Alt+Tab / Ctrl+Alt+Shift+Tab | Next / previous workspace |
+| Ctrl+Alt+Right | Next tab |
+| Ctrl+Alt+Left | Previous tab |
+| Ctrl+Alt+Down | Next workspace |
+| Ctrl+Alt+Up | Previous workspace |
 | Ctrl+N | New workspace |
 | Ctrl+Alt+R | Rename workspace |
-| Ctrl+T / Ctrl+Shift+T | New tab |
+| Ctrl+T | New tab |
 | Ctrl+W | Close current tab and its panes |
 | Ctrl+Shift+W | Close the focused pane |
 | Ctrl+backtick | Focus the terminal pane |
-| Ctrl++ / Ctrl+- | Increase / decrease terminal font size |
+| Ctrl+= | Increase terminal font size |
+| Ctrl+- | Decrease terminal font size |
 | Ctrl+Mouse Wheel | Change terminal font size |
 | Ctrl+? | Keyboard shortcut help |
 | Ctrl+, | Settings |
+| Ctrl+B | Toggle sidebar |
 | Ctrl+Shift+P | Command palette |
 | Alt+Shift+D | Automatic split direction |
-| Alt+Shift++ / Alt+Shift+- | Split right / down |
-| Alt+Arrow | Move focus between panes |
-| Alt+Shift+Arrow | Resize the nearest split |
+| Alt+Shift++ | Split pane right |
+| Alt+Shift+- | Split pane down |
+| Alt+ArrowUp | Move focus up |
+| Alt+ArrowDown | Move focus down |
+| Alt+ArrowLeft | Move focus left |
+| Alt+ArrowRight | Move focus right |
+| Alt+Shift+ArrowUp | Resize the nearest split up |
+| Alt+Shift+ArrowDown | Resize the nearest split down |
+| Alt+Shift+ArrowLeft | Resize the nearest split left |
+| Alt+Shift+ArrowRight | Resize the nearest split right |
 | Ctrl+C | Copy selected text, or interrupt the terminal |
+| Ctrl+V | Paste clipboard text into the terminal |
 
 Double-click a tab to rename it, drag tabs to reorder them, and right-click for tab actions. Drag splitters to resize panes. Closing the main window leaves terminal sessions running; closing a pane, tab, or workspace terminates its owned sessions.
 

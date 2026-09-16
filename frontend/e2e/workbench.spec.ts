@@ -457,7 +457,72 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   ).toBeVisible();
 });
 
-test("legacy font keys and Ctrl+wheel resize terminals without remounting", async ({
+test("renames the active workspace with Ctrl+Alt+R", async ({ page }) => {
+  await page.goto("/");
+  await page.locator(".xterm-helper-textarea").focus();
+  await page.keyboard.press("Control+Alt+r");
+  await expect(
+    page.getByRole("heading", { name: "Rename workspace", exact: true }),
+  ).toBeVisible();
+});
+
+test("passes unbound Tab to the focused terminal", async ({ page }) => {
+  await page.goto("/");
+  const terminalInput = page.locator(".xterm-helper-textarea");
+  await terminalInput.focus();
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls
+          .filter((entry: any) => entry.method === "pane.sendInput")
+          .map((entry: any) => entry.params.data)
+          .join(""),
+      ),
+    )
+    .toContain("\t");
+  await expect(terminalInput).toBeFocused();
+});
+
+test("copies terminal selections with Ctrl+C and pastes with Ctrl+V", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const terminalInput = page.locator(".xterm-helper-textarea");
+  const screen = page.locator(".xterm-screen");
+  await terminalInput.focus();
+  const box = await screen.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 5, box!.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 120, box!.y + 5);
+  await page.mouse.up();
+  await page.keyboard.press("Control+c");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls.some(
+          (entry: any) => entry.method === "copy",
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.evaluate(() => navigator.clipboard.writeText("pasted text"));
+  await page.keyboard.press("Control+v");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls
+          .filter((entry: any) => entry.method === "pane.sendInput")
+          .map((entry: any) => entry.params.data)
+          .join(""),
+      ),
+    )
+    .toContain("pasted text");
+});
+
+test("font shortcuts and Ctrl+wheel resize terminals without remounting", async ({
   page,
 }) => {
   await page.goto("/");
@@ -484,39 +549,24 @@ test("legacy font keys and Ctrl+wheel resize terminals without remounting", asyn
       ),
     )
     .toBe(14);
-  await page.keyboard.press("Control+Shift+Equal");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as any).testCalls
-            .filter((entry: any) => entry.method === "settings.set")
-            .at(-1)?.params.settings.fontSize,
-      ),
-    )
-    .toBe(15);
-  await page.keyboard.press("Control+NumpadAdd");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as any).testCalls
-            .filter((entry: any) => entry.method === "settings.set")
-            .at(-1)?.params.settings.fontSize,
-      ),
-    )
-    .toBe(16);
-  await page.keyboard.press("Control+NumpadSubtract");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as any).testCalls
-            .filter((entry: any) => entry.method === "settings.set")
-            .at(-1)?.params.settings.fontSize,
-      ),
-    )
-    .toBe(15);
+  for (const shortcut of [
+    "Control+Shift+Equal",
+    "Control+NumpadAdd",
+    "Control+Shift+NumpadAdd",
+    "Control+Shift+Minus",
+  ]) {
+    await page.keyboard.press(shortcut);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as any).testCalls.filter(
+              (entry: any) => entry.method === "settings.set",
+            ).length,
+        ),
+      )
+      .toBe(1);
+  }
   await page
     .locator(".xterm-host")
     .dispatchEvent("wheel", { ctrlKey: true, deltaY: -120 });
@@ -529,7 +579,7 @@ test("legacy font keys and Ctrl+wheel resize terminals without remounting", asyn
             .at(-1)?.params.settings.fontSize,
       ),
     )
-    .toBe(16);
+    .toBe(15);
   await page.keyboard.press("Control+Minus");
   await expect
     .poll(() =>
@@ -540,7 +590,7 @@ test("legacy font keys and Ctrl+wheel resize terminals without remounting", asyn
             .at(-1)?.params.settings.fontSize,
       ),
     )
-    .toBe(15);
+    .toBe(14);
   await expect
     .poll(() =>
       page.evaluate(
@@ -603,7 +653,16 @@ test("focus shortcut returns from settings and shortcut help lists current bindi
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(help).toBeVisible();
   await expect(
-    help.getByText("Ctrl+Alt+Shift+Tab", { exact: true }),
+    help.getByText("Ctrl+Alt+ArrowUp", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    help.getByText("Ctrl+Alt+ArrowDown", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    help.getByText("Ctrl+Alt+ArrowLeft", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    help.getByText("Ctrl+Alt+ArrowRight", { exact: true }),
   ).toBeVisible();
   await expect(
     help.getByText("Ctrl+Mouse Wheel", { exact: true }),
