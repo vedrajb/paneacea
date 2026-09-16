@@ -52,7 +52,7 @@ func shellIntegration(executable string, arguments []string, environment map[str
 		return append(append([]string{}, arguments...), "-NoExit", "-EncodedCommand", base64.StdEncoding.EncodeToString(data))
 	}
 	if name == "bash.exe" {
-		environment["PROMPT_COMMAND"] = `printf '\033]7;file://localhost%s\007' "$(pwd -W 2>/dev/null || pwd)"`
+		environment["PROMPT_COMMAND"] = `printf '\033]7;file://localhost/%s\007' "$(pwd -W 2>/dev/null || pwd)"`
 	}
 	return arguments
 }

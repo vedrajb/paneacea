@@ -40,3 +40,11 @@ func TestShellIntegrationReplacesDumbTerminalEnvironment(t *testing.T) {
 		t.Fatalf("COLORTERM = %q", environment["COLORTERM"])
 	}
 }
+
+func TestShellIntegrationTracksGitBashWorkingDirectory(t *testing.T) {
+	environment := map[string]string{}
+	shellIntegration("bash.exe", nil, environment)
+	if environment["PROMPT_COMMAND"] != `printf '\033]7;file://localhost/%s\007' "$(pwd -W 2>/dev/null || pwd)"` {
+		t.Fatalf("PROMPT_COMMAND = %q", environment["PROMPT_COMMAND"])
+	}
+}

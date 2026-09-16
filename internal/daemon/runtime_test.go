@@ -123,6 +123,66 @@ func TestDetachedTerminalAndRuntimeRestoration(t *testing.T) {
 		t.Fatal("workspace ownership cleanup failed")
 	}
 }
+func TestSplitPaneWorkingDirectoriesRestore(t *testing.T) {
+	store := &memoryStore{}
+	r, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { r.Close() }()
+	var profile model.Profile
+	for _, candidate := range Profiles() {
+		if candidate.ID == "git-bash" && candidate.Available {
+			profile = candidate
+			break
+		}
+	}
+	if profile.Executable == "" {
+		t.Skip("Git Bash is not installed")
+	}
+	root := t.TempDir()
+	other := t.TempDir()
+	state := invoke(t, r, "workspace.create", Params{Name: "Test", RootDirectory: root}).(*model.State)
+	state = invoke(t, r, "tab.create", Params{WorkspaceID: state.ActiveWorkspaceID, Executable: profile.Executable, Arguments: profile.Arguments}).(*model.State)
+	w := state.Workspace(state.ActiveWorkspaceID)
+	_, tab := state.Tab(w.ActiveTabID)
+	firstID := tab.ActivePaneID
+	state = invoke(t, r, "pane.split", Params{PaneID: firstID, Orientation: "vertical"}).(*model.State)
+	_, tab = state.Tab(w.ActiveTabID)
+	secondID := tab.ActivePaneID
+	otherForBash := "/" + strings.ToLower(other[:1]) + strings.ReplaceAll(other[2:], "\\", "/")
+	invoke(t, r, "pane.sendInput", Params{PaneID: secondID, Data: "cd -- '" + otherForBash + "'\r"})
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		state = invoke(t, r, "state.get", nil).(*model.State)
+		if state.Panes[secondID].CurrentWorkingDirectory == other {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if state.Panes[firstID].CurrentWorkingDirectory != root || state.Panes[secondID].CurrentWorkingDirectory != other {
+		t.Fatalf("working directories were not tracked independently: first=%q second=%q", state.Panes[firstID].CurrentWorkingDirectory, state.Panes[secondID].CurrentWorkingDirectory)
+	}
+	r.Close()
+	r, err = New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke(t, r, "pane.sendInput", Params{PaneID: firstID, Data: "pwd -W\r"})
+	invoke(t, r, "pane.sendInput", Params{PaneID: secondID, Data: "pwd -W\r"})
+	rootForBash := strings.ReplaceAll(root, "\\", "/")
+	otherForBash = strings.ReplaceAll(other, "\\", "/")
+	deadline = time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		first := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: firstID}).(ipc.Output)
+		second := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: secondID}).(ipc.Output)
+		if strings.Contains(string(first.Data), rootForBash) && strings.Contains(string(second.Data), otherForBash) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("restored panes did not start in their saved working directories")
+}
 func TestInvalidMethodsAndTargets(t *testing.T) {
 	r, err := New(&memoryStore{})
 	if err != nil {
