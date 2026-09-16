@@ -457,6 +457,27 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   ).toBeVisible();
 });
 
+test("has no sidebar and keeps Settings in the title bar's top-right corner", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("navigation", { name: "Activity bar" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".explorer")).toHaveCount(0);
+
+  const titlebar = await page.locator(".titlebar").boundingBox();
+  const settings = await page
+    .getByTitle("Settings", { exact: true })
+    .boundingBox();
+  expect(titlebar).not.toBeNull();
+  expect(settings).not.toBeNull();
+  expect(settings!.x + settings!.width).toBeGreaterThanOrEqual(
+    titlebar!.x + titlebar!.width - 16,
+  );
+});
+
 test("renames the active workspace with Ctrl+Alt+R", async ({ page }) => {
   await page.goto("/");
   await page.locator(".xterm-helper-textarea").focus();

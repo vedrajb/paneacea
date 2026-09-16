@@ -24,7 +24,6 @@ export const actions = {
   "Workspace.Close": "Workspace: Close Workspace",
   "Workspace.Next": "Workspace: Next",
   "Workspace.Previous": "Workspace: Previous",
-  "Workspace.Switch": "Workspace: Switch Workspace",
   "Workspace.Rename": "Workspace: Rename",
   "Workspace.ChangeRoot": "Workspace: Open Folder",
   "Paneacea.CommandPalette": "Paneacea: Command Palette",
@@ -32,7 +31,6 @@ export const actions = {
   "Paneacea.Reconnect": "Paneacea: Reconnect Runtime",
   "Agent.Resume": "Agent: Resume Captured Session",
   "Help.ShowShortcuts": "Help: Keyboard Shortcuts",
-  "Paneacea.ToggleSidebar": "View: Toggle Side Bar Visibility",
 } as const;
 export type Action = keyof typeof actions;
 export const defaults: Record<string, Action> = {
@@ -59,7 +57,6 @@ export const defaults: Record<string, Action> = {
   "Alt+Shift+ArrowLeft": "Terminal.ResizePaneLeft",
   "Alt+Shift+ArrowRight": "Terminal.ResizePaneRight",
   "Ctrl+Shift+p": "Paneacea.CommandPalette",
-  "Ctrl+b": "Paneacea.ToggleSidebar",
   "Ctrl+,": "Paneacea.Settings",
   "Ctrl+Alt+ArrowRight": "Terminal.NextTab",
   "Ctrl+Alt+ArrowLeft": "Terminal.PreviousTab",

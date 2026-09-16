@@ -17,12 +17,12 @@ function key(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   } as unknown as KeyboardEvent;
 }
 
-describe("side panel shortcut", () => {
-  it("binds Ctrl+B to toggling the side panel", () => {
-    expect(resolve(key())).toBe("Paneacea.ToggleSidebar");
+describe("removed side panel shortcut", () => {
+  it("leaves Ctrl+B unbound", () => {
+    expect(resolve(key())).toBeNull();
   });
 
-  it("executes the toggle once per key press", () => {
+  it("does not execute an action", () => {
     const execute = vi.fn();
     const event = key();
 
@@ -35,10 +35,8 @@ describe("side panel shortcut", () => {
         vi.fn(),
         {},
       ),
-    ).toBe(false);
-    expect(execute).toHaveBeenCalledExactlyOnceWith(
-      "Paneacea.ToggleSidebar",
-    );
-    expect(event.preventDefault).toHaveBeenCalledOnce();
+    ).toBe(true);
+    expect(execute).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
   });
 });

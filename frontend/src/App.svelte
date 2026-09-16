@@ -30,11 +30,6 @@
   } from "./shortcuts/actions";
   import { neighbor, resizeTarget } from "./services/layout";
   import { tabLabel } from "./services/tabLabel";
-  import { countPanesForTab } from "./services/tabPaneCount";
-  import {
-    workspaceMenuItems,
-    type WorkspaceMenuAction,
-  } from "./services/workspaceMenu";
   import appIconUrl from "../../icons/paneacea-app-icon.svg?url";
   import logoUrl from "../../icons/paneacea-logo-transparent.svg?url";
   import trayDarkUrl from "../../icons/paneacea-tray-dark.svg?url";
@@ -44,7 +39,6 @@
   let tab: Tab | undefined;
   let connected = false,
     errorMessage = "",
-    sidebar = true,
     busy = false;
   let palette = false,
     query = "",
@@ -171,25 +165,6 @@
       error(String(e));
     }
   }
-  function runWorkspaceMenuAction(
-    action: WorkspaceMenuAction,
-    workspaceId: string,
-  ) {
-    const target = state?.workspaces.find((item) => item.id === workspaceId);
-    if (!target) return;
-    if (action === "Workspace.Rename") {
-      textDialog("Rename workspace", "Name", target.name, async (name) => {
-        await mutate("workspace.rename", { workspaceId, name });
-      });
-      return;
-    }
-    confirmation = {
-      title: `Close “${target.name}” and terminate all its terminal processes?`,
-      submit: async () => {
-        await mutate("workspace.close", { workspaceId });
-      },
-    };
-  }
   async function newWorkspace() {
     const root = await bridge().OpenFolder();
     if (!root) return;
@@ -251,18 +226,12 @@
       case "Paneacea.Settings":
         await openSettings();
         return;
-      case "Paneacea.ToggleSidebar":
-        sidebar = !sidebar;
-        return;
       case "Paneacea.Reconnect":
         generation++;
         await refresh();
         return;
       case "Workspace.New":
         await newWorkspace();
-        return;
-      case "Workspace.Switch":
-        sidebar = true;
         return;
       case "Workspace.Next":
       case "Workspace.Previous":
@@ -556,77 +525,14 @@
       class="command-trigger"
       on:click={() => execute("Paneacea.CommandPalette")}
       >Search commands <kbd>Ctrl Shift P</kbd></button
+    ><button
+      class="settings-trigger"
+      title="Settings"
+      aria-label="Settings"
+      on:click={() => execute("Paneacea.Settings")}>⚙</button
     >
   </header>
   <div class="workbench">
-    <nav class="activity" aria-label="Activity bar">
-      <button
-        class:selected={sidebar}
-        title="Toggle Explorer (Ctrl+B)"
-        aria-label="Toggle Explorer"
-        on:click={() => (sidebar = !sidebar)}>▤</button
-      ><button title="New workspace" on:click={() => execute("Workspace.New")}
-        >⊞</button
-      ><button
-        title="Command palette"
-        on:click={() => execute("Paneacea.CommandPalette")}>⌘</button
-      >
-      <div class="spacer"></div>
-      <button title="Settings" on:click={() => execute("Paneacea.Settings")}
-        >⚙</button
-      >
-    </nav>
-    {#if sidebar}<aside class="explorer">
-        <div class="section-heading">
-          <span>EXPLORER</span><button
-            title="New workspace"
-            on:click={() => execute("Workspace.New")}>+</button
-          >
-        </div>
-        {#each state?.workspaces ?? [] as item (item.id)}<div
-            class="workspace-item"
-          >
-            <button
-              class="workspace-label"
-              class:selected={workspace?.id === item.id}
-              title={item.rootDirectory}
-              on:click={() =>
-                perform("workspace.switch", { workspaceId: item.id })}
-              on:contextmenu={(event) => {
-                event.preventDefault();
-                menu = {
-                  x: Math.min(event.clientX, window.innerWidth - 210),
-                  y: Math.min(event.clientY, window.innerHeight - 110),
-                  workspaceId: item.id,
-                };
-              }}
-              ><span class="disclosure"
-                >{workspace?.id === item.id ? "⌄" : "›"}</span
-              ><span class="workspace-name">{item.name}</span><span
-                class="workspace-root">{item.rootDirectory}</span><small
-                class="workspace-count">{item.tabs.length}</small
-              ></button
-            >
-            {#if workspace?.id === item.id}<div class="workspace-contents">
-                {#each item.tabs as entry, index (entry.id)}<button
-                    class="tree-tab"
-                    class:selected={tab?.id === entry.id}
-                    on:click={() => perform("tab.focus", { tabId: entry.id })}
-                    title={`${countPanesForTab(state?.panes ?? {}, entry.id)} panes`}
-                    ><img
-                      class="tree-icon"
-                      src={trayIconUrl}
-                      alt=""
-                      aria-hidden="true"
-                    /><span class="tree-name"
-                      >{tabLabel(entry, index)}</span
-                    ><small class="tab-count"
-                      >{countPanesForTab(state?.panes ?? {}, entry.id)}</small
-                    ></button
-                  >{/each}
-              </div>{/if}
-          </div>{/each}
-      </aside>{/if}
     <main>
       <div class="tabs" role="tablist" aria-label="Terminal tabs">
         {#each workspace?.tabs ?? [] as item, index (item.id)}<button
@@ -889,14 +795,7 @@
     style:left={`${menu.x}px`}
     style:top={`${menu.y}px`}
   >
-    {#if menu.workspaceId}{#each workspaceMenuItems as item}<button
-          on:click={() => {
-            if (!menu?.workspaceId) return;
-            const workspaceId = menu.workspaceId;
-            menu = null;
-            runWorkspaceMenuAction(item.action, workspaceId);
-          }}>{item.label}</button
-        >{/each}{:else if menu.tabId}<button
+    {#if menu.tabId}<button
         on:click={() => {
           if (!menu?.tabId) return;
           const tabId = menu.tabId;
