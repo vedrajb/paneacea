@@ -162,10 +162,104 @@ kbd {
   color: var(--muted-foreground);
   font-size: 18px;
 }
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.runtime-status {
+  color: #b7e3c2;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .workbench {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+.sidebar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: 0 0 56px;
+  flex-direction: column;
+  padding: 6px;
+  background: #0c0c0c;
+  border-right: 1px solid var(--border);
+}
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidebar-spacer {
+  flex: 1;
+}
+.sidebar button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--foreground);
+}
+.sidebar button:hover,
+.sidebar button.active {
+  background: #ffffff12;
+}
+.sidebar button.active {
+  color: #ffffff;
+}
+.sidebar svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.workspace-list {
+  width: min(520px, 100%);
+  max-height: min(520px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 6px;
+  background: #161616;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px #000c;
+}
+.workspace-selector-overlay {
+  align-items: center;
+  padding: 20px;
+}
+.workspace-list-title {
+  padding: 8px 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.workspace-list button {
+  width: 100%;
+  height: auto;
+  min-height: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 10px;
+  text-align: left;
+}
+.workspace-list button span,
+.workspace-list button small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-list button small {
+  color: var(--muted-foreground);
+  font-size: 10px;
 }
 .spacer {
   flex: 1;
@@ -332,25 +426,8 @@ main {
 .splitter:focus {
   background: var(--accent);
 }
-.statusbar {
-  height: 24px;
-  flex-shrink: 0;
-  background: #0037da;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 0 12px;
-  font-size: 11px;
-  color: white;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.status-root {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .offline {
-  color: #ffe6a0;
+  color: #f2c994;
 }
 .welcome {
   height: 100%;
@@ -544,8 +621,5 @@ main {
   }
   .titlebar {
     justify-content: space-between;
-  }
-  .status-root {
-    max-width: 180px;
   }
 }

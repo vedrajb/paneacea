@@ -554,24 +554,63 @@ test("uses a compact rounded terminal scrollbar", async ({ page }) => {
   await expect(slider).toHaveCSS("border-top-left-radius", "3px");
 });
 
-test("has no sidebar and keeps Settings in the title bar's top-right corner", async ({
+test("uses a collapsed workspace rail with bottom-pinned Settings", async ({
   page,
 }) => {
   await page.goto("/");
 
-  await expect(
-    page.getByRole("navigation", { name: "Activity bar" }),
-  ).toHaveCount(0);
-  await expect(page.locator(".explorer")).toHaveCount(0);
+  const sidebar = page.getByRole("complementary", {
+    name: "Workspace controls",
+  });
+  await expect(sidebar).toBeVisible();
+  await expect(page.getByTitle("Workspaces", { exact: true })).toBeVisible();
+  await page.locator(".xterm-helper-textarea").focus();
+  await page.keyboard.press("Control+b");
+  const selector = page.getByRole("dialog", { name: "Workspace selector" });
+  await expect(selector).toBeVisible();
+  const selectorBox = await selector.boundingBox();
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  expect(selectorBox).not.toBeNull();
+  expect(
+    Math.abs(selectorBox!.x + selectorBox!.width / 2 - viewportWidth / 2),
+  ).toBeLessThanOrEqual(1);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(selector).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls.some(
+          (entry: any) =>
+            entry.method === "workspace.switch" &&
+            entry.params.workspaceId === "other",
+        ),
+      ),
+    )
+    .toBe(true);
 
-  const titlebar = await page.locator(".titlebar").boundingBox();
+  await page.getByTitle("Workspaces", { exact: true }).click();
+  await expect(selector).toBeVisible();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Escape");
+  await expect(selector).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).testCalls.filter(
+          (entry: any) => entry.method === "workspace.switch",
+        ).length,
+    ),
+  ).toBe(1);
+
+  const sidebarBox = await sidebar.boundingBox();
   const settings = await page
     .getByTitle("Settings", { exact: true })
     .boundingBox();
-  expect(titlebar).not.toBeNull();
+  expect(sidebarBox).not.toBeNull();
   expect(settings).not.toBeNull();
-  expect(settings!.x + settings!.width).toBeGreaterThanOrEqual(
-    titlebar!.x + titlebar!.width - 16,
+  expect(settings!.y + settings!.height).toBeGreaterThanOrEqual(
+    sidebarBox!.y + sidebarBox!.height - 8,
   );
 });
 
@@ -770,12 +809,6 @@ test("focus shortcut returns from settings and shortcut help lists current bindi
   await page.keyboard.press("Control+Shift+Slash");
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(help).toBeVisible();
-  await expect(
-    help.getByText("Ctrl+Alt+ArrowUp", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    help.getByText("Ctrl+Alt+ArrowDown", { exact: true }),
-  ).toBeVisible();
   await expect(
     help.getByText("Ctrl+Alt+ArrowLeft", { exact: true }),
   ).toBeVisible();

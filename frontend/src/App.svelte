@@ -42,7 +42,9 @@
     busy = false;
   let palette = false,
     query = "",
-    settingsOpen = false;
+    settingsOpen = false,
+    workspaceListOpen = false;
+  let workspaceListIndex = 0;
   let profiles: Profile[] = [];
   let draft: Settings;
   let bindings = "";
@@ -243,6 +245,9 @@
       case "Workspace.New":
         await newWorkspace();
         return;
+      case "Workspace.OpenSelector":
+        openWorkspaceSelector();
+        return;
       case "Workspace.Next":
       case "Workspace.Previous":
         if (state && state.workspaces.length) {
@@ -370,9 +375,47 @@
   function execute(action: Action) {
     void executeAsync(action).catch((e) => error(String(e)));
   }
+  function selectWorkspace(workspaceId: string) {
+    workspaceListOpen = false;
+    perform("workspace.switch", { workspaceId });
+  }
+  function openWorkspaceSelector() {
+    const index = state?.workspaces.findIndex((item) => item.id === workspace?.id) ?? -1;
+    workspaceListIndex = index >= 0 ? index : 0;
+    workspaceListOpen = true;
+  }
+  function focusWorkspaceSelector(node: HTMLElement) {
+    requestAnimationFrame(() =>
+      node
+        .querySelectorAll<HTMLButtonElement>("button")
+        [workspaceListIndex]?.focus(),
+    );
+  }
+  function workspaceSelectorKey(event: KeyboardEvent) {
+    const workspaces = state?.workspaces ?? [];
+    if (!workspaces.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      workspaceListIndex =
+        (workspaceListIndex + direction + workspaces.length) % workspaces.length;
+      const selector = event.currentTarget as HTMLElement;
+      requestAnimationFrame(() =>
+        selector
+          .querySelectorAll<HTMLButtonElement>("button")
+          [workspaceListIndex]?.focus(),
+      );
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectWorkspace(workspaces[workspaceListIndex].id);
+    }
+  }
   function dismissPopups() {
     palette = false;
     settingsOpen = false;
+    workspaceListOpen = false;
     modal = null;
     confirmation = null;
     menu = null;
@@ -381,7 +424,13 @@
   function popupKey(event: KeyboardEvent) {
     if (event.defaultPrevented) return;
     const popupOpen =
-      palette || modal || confirmation || settingsOpen || shortcutsOpen || menu;
+      palette ||
+      modal ||
+      confirmation ||
+      settingsOpen ||
+      workspaceListOpen ||
+      shortcutsOpen ||
+      menu;
     if (!popupOpen) return;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -453,7 +502,15 @@
       if (!event.repeat) execute(action);
       return;
     }
-    if (palette || modal || confirmation || settingsOpen || shortcutsOpen || menu)
+    if (
+      palette ||
+      modal ||
+      confirmation ||
+      settingsOpen ||
+      workspaceListOpen ||
+      shortcutsOpen ||
+      menu
+    )
       return;
     if (
       event.target instanceof HTMLInputElement ||
@@ -548,14 +605,43 @@
       class="command-trigger"
       on:click={() => execute("Paneacea.CommandPalette")}
       >Search commands <kbd>Ctrl Shift P</kbd></button
-    ><button
-      class="settings-trigger"
-      title="Settings"
-      aria-label="Settings"
-      on:click={() => execute("Paneacea.Settings")}>⚙</button
-    >
+    ><div class="titlebar-actions">
+      <span
+        class="runtime-status"
+        class:offline={!connected}
+        role="status"
+        >{connected ? "● Runtime connected" : "○ Runtime disconnected"}</span>
+    </div>
   </header>
   <div class="workbench">
+    <aside class="sidebar" aria-label="Workspace controls">
+      <div class="sidebar-top">
+        <button
+          class:active={workspaceListOpen}
+          title="Workspaces"
+          aria-label="Workspaces"
+          aria-expanded={workspaceListOpen}
+          on:click={openWorkspaceSelector}
+          ><svg viewBox="0 0 24 24" aria-hidden="true"><path
+              d="M4 5.5h6.5v5H4zM13.5 5.5H20v5h-6.5zM4 13.5h6.5v5H4zM13.5 13.5H20v5h-6.5z"
+            /></svg></button
+        ><button
+          title="New workspace"
+          aria-label="New workspace"
+          on:click={() => execute("Workspace.New")}
+          ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button
+        >
+      </div>
+      <div class="sidebar-spacer"></div>
+      <button
+        title="Settings"
+        aria-label="Settings"
+        on:click={() => execute("Paneacea.Settings")}
+        ><svg viewBox="0 0 24 24" aria-hidden="true"><path
+            d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm8 3.75 1.5-1-1.5-2.6-1.75.5a6.7 6.7 0 0 0-1.7-1L16.3 6h-3l-.75 1.9a6.7 6.7 0 0 0-1.7 1L9.1 8.4 7.6 11l1.5 1a6.2 6.2 0 0 0 0 2l-1.5 1 1.5 2.6 1.75-.5a6.7 6.7 0 0 0 1.7 1l.75 1.9h3l.75-1.9a6.7 6.7 0 0 0 1.7-1l1.75.5 1.5-2.6-1.5-1a6.2 6.2 0 0 0 0-2Z"
+          /></svg></button
+      >
+    </aside>
     <main>
       <div class="tabs" role="tablist" aria-label="Terminal tabs">
         {#each workspace?.tabs ?? [] as item, index (item.id)}<button
@@ -648,21 +734,30 @@
       </div>
     </main>
   </div>
-  <footer class="statusbar">
-    <span class:offline={!connected}
-      >{connected ? "● Runtime connected" : "○ Runtime disconnected"}</span
-    ><span>{workspace?.name ?? "No workspace"}</span><span class="status-root"
-      >{workspace?.rootDirectory ?? ""}</span
-    >
-    <div class="spacer"></div>
-    {#if tab && state}<span
-        >{state.panes[tab.activePaneId]?.executable.split(/[/\\]/).pop()}</span
-      ><span
-        >{state.panes[tab.activePaneId]?.agent?.state ??
-          state.panes[tab.activePaneId]?.status}</span
-      ><span>Pane {tab.activePaneId.slice(0, 6)}</span>{/if}
-  </footer>
 </div>
+{#if workspaceListOpen}<div
+    class="overlay workspace-selector-overlay"
+    role="presentation"
+    on:click={() => (workspaceListOpen = false)}
+  >
+    <div
+      class="workspace-list"
+      role="dialog"
+      aria-label="Workspace selector"
+      aria-modal="true"
+      tabindex="-1"
+      use:focusWorkspaceSelector
+      on:click|stopPropagation
+      on:keydown={workspaceSelectorKey}
+    >
+      <div class="workspace-list-title">Workspaces</div>
+      {#each state?.workspaces ?? [] as item}<button
+          class:active={item.id === workspace?.id}
+          on:click={() => selectWorkspace(item.id)}
+          ><span>{item.name}</span><small>{item.rootDirectory}</small></button
+        >{/each}
+    </div>
+  </div>{/if}
 {#if shortcutsOpen}
   <ShortcutHelp
     overrides={state?.settings.keybindings ?? {}}

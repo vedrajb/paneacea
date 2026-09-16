@@ -17,12 +17,12 @@ function key(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   } as unknown as KeyboardEvent;
 }
 
-describe("removed side panel shortcut", () => {
-  it("leaves Ctrl+B unbound", () => {
-    expect(resolve(key())).toBeNull();
+describe("workspace selector shortcut", () => {
+  it("maps Ctrl+B to the workspace selector", () => {
+    expect(resolve(key())).toBe("Workspace.OpenSelector");
   });
 
-  it("does not execute an action", () => {
+  it("executes the workspace selector action", () => {
     const execute = vi.fn();
     const event = key();
 
@@ -35,8 +35,8 @@ describe("removed side panel shortcut", () => {
         vi.fn(),
         {},
       ),
-    ).toBe(true);
-    expect(execute).not.toHaveBeenCalled();
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    ).toBe(false);
+    expect(execute).toHaveBeenCalledWith("Workspace.OpenSelector");
+    expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 });

@@ -19,8 +19,6 @@ function key(value: string, code: string, modifiers: string): KeyboardEvent {
 const bindings: [string, string, string, Action][] = [
   ["ArrowRight", "ArrowRight", "Ctrl+Alt", "Terminal.NextTab"],
   ["ArrowLeft", "ArrowLeft", "Ctrl+Alt", "Terminal.PreviousTab"],
-  ["ArrowDown", "ArrowDown", "Ctrl+Alt", "Workspace.Next"],
-  ["ArrowUp", "ArrowUp", "Ctrl+Alt", "Workspace.Previous"],
   ["r", "KeyR", "Ctrl+Alt", "Workspace.Rename"],
   ["`", "Backquote", "Ctrl", "Terminal.Focus"],
   ["t", "KeyT", "Ctrl", "Terminal.NewTab"],
