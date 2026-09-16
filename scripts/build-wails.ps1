@@ -6,7 +6,7 @@ param(
 . "$PSScriptRoot\wails-env.ps1"
 . "$PSScriptRoot\stop-wails.ps1"
 Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "build\bin")
-Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "portable-release\exes")
+Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "portable-release")
 Write-Host "Building $Configuration configuration."
 Push-Location frontend
 try {
@@ -27,13 +27,12 @@ if ($Configuration -eq "Release") {
 }
 if ($LASTEXITCODE -ne 0) { throw "Desktop build failed." }
 $portableDirectory = Join-Path $projectDirectory "portable-release"
-$portableExesDirectory = Join-Path $portableDirectory "exes"
 $portableLogsDirectory = Join-Path $portableDirectory "Logs"
-foreach ($directory in @($portableExesDirectory, $portableLogsDirectory)) {
+foreach ($directory in @($portableDirectory, $portableLogsDirectory)) {
     if (-not (Test-Path -LiteralPath $directory)) { New-Item -ItemType Directory -Path $directory | Out-Null }
 }
 foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe")) {
-    Copy-Item -LiteralPath (Join-Path $projectDirectory "build\bin\$name") -Destination $portableExesDirectory -Force
+    Copy-Item -LiteralPath (Join-Path $projectDirectory "build\bin\$name") -Destination $portableDirectory -Force
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "pca.cmd") -Destination (Join-Path $portableDirectory "pca.cmd") -Force
 $portableConfig = Join-Path $portableDirectory "config.toml"
@@ -49,4 +48,4 @@ keybindings = {}
 }
 & (Join-Path $PSScriptRoot "test-portable-package.ps1") -PackageDirectory $portableDirectory
 Write-Host "Built $portableDirectory\pca.cmd"
-if ($Run) { Start-Process -FilePath (Join-Path $portableExesDirectory "paneacea.exe") -WorkingDirectory $portableExesDirectory -WindowStyle Normal }
+if ($Run) { Start-Process -FilePath (Join-Path $portableDirectory "paneacea.exe") -WorkingDirectory $portableDirectory -WindowStyle Normal }

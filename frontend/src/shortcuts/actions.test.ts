@@ -88,23 +88,48 @@ describe("terminal key ownership", () => {
       ),
     ).toBeNull();
   });
-  it("copies selection without interrupting, including failure", async () => {
-    const copy = vi.fn().mockRejectedValue(new Error("denied")),
+  it("copies and clears selection without interrupting", async () => {
+    const copy = vi.fn().mockResolvedValue(undefined),
+      clearSelection = vi.fn(),
       error = vi.fn(),
       execute = vi.fn();
     expect(
       handleKey(
         key("c", { ctrlKey: true }),
-        { hasSelection: () => true, getSelection: () => "text" },
+        {
+          hasSelection: () => true,
+          getSelection: () => "text",
+          clearSelection,
+        },
         execute,
         copy,
         error,
         {},
       ),
     ).toBe(false);
-    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+    await vi.waitFor(() => expect(clearSelection).toHaveBeenCalledOnce());
     expect(copy).toHaveBeenCalledWith("text");
     expect(execute).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  });
+  it("keeps selection when copying fails", async () => {
+    const copy = vi.fn().mockRejectedValue(new Error("denied")),
+      clearSelection = vi.fn(),
+      error = vi.fn();
+    handleKey(
+      key("c", { ctrlKey: true }),
+      {
+        hasSelection: () => true,
+        getSelection: () => "text",
+        clearSelection,
+      },
+      vi.fn(),
+      copy,
+      error,
+      {},
+    );
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+    expect(clearSelection).not.toHaveBeenCalled();
   });
   it("passes unselected Ctrl+C through", () => {
     expect(

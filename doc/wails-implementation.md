@@ -18,10 +18,9 @@ The build creates a portable package at `portable-release` with this layout:
 
 ```text
 portable-release/
-├── exes/
-│   ├── paneacea.exe
-│   ├── paneacea-runtime.exe
-│   └── paneacea-cli.exe
+├── paneacea.exe
+├── paneacea-runtime.exe
+├── paneacea-cli.exe
 ├── Logs/
 ├── config.toml
 └── pca.cmd
@@ -41,7 +40,7 @@ The build script compiles all three binaries together. It uses the workspace-loc
 
 Keep `paneacea.exe`, `paneacea-runtime.exe`, and `paneacea-cli.exe` in the same directory. The GUI starts the runtime when needed. Closing the GUI leaves terminal processes running. Closing a pane, tab, or workspace terminates its owned sessions.
 
-The runtime stores SQLite metadata under `%APPDATA%\Paneacea\go-runtime\paneacea.db`. Set `PANEACEA_DATA_DIR` before starting the runtime to choose a different directory. This database is separate from the Rust runtime's data. Existing Rust/WPF workspaces are not imported.
+The runtime stores SQLite metadata beside `paneacea-runtime.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before starting the runtime to choose a different directory. This database is separate from the Rust runtime's data. Existing Rust/WPF workspaces are not imported.
 
 ## Use
 

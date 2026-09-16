@@ -120,7 +120,11 @@ export function shortcutsForAction(
 }
 export function handleKey(
   event: KeyboardEvent,
-  terminal: { hasSelection(): boolean; getSelection(): string },
+  terminal: {
+    hasSelection(): boolean;
+    getSelection(): string;
+    clearSelection?(): void;
+  },
   execute: (action: Action) => void,
   copy: (text: string) => Promise<void>,
   error: (message: string) => void,
@@ -140,6 +144,7 @@ export function handleKey(
       const text = terminal.getSelection();
       void Promise.resolve()
         .then(() => copy(text))
+        .then(() => terminal.clearSelection?.())
         .catch(() => error("Could not copy terminal selection."));
     }
     return false;

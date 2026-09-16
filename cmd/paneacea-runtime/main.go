@@ -18,6 +18,15 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+func runtimeDataDirectory() (string, error) {
+	base, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(base), nil
+}
+
 func run() error {
 	data := flag.String("data", "", "SQLite state directory")
 	flag.Parse()
@@ -25,11 +34,11 @@ func run() error {
 		*data = os.Getenv("PANEACEA_DATA_DIR")
 	}
 	if *data == "" {
-		base, err := os.UserConfigDir()
+		base, err := runtimeDataDirectory()
 		if err != nil {
 			return err
 		}
-		*data = filepath.Join(base, "Paneacea", "go-runtime")
+		*data = base
 	}
 	listener, err := ipc.Listen()
 	if err != nil {

@@ -38,6 +38,18 @@ Build without launching:
 .\build.bat
 ```
 
+Stop all running Paneacea application, runtime, and CLI executables:
+
+```powershell
+.\scripts\stop-paneacea.bat
+```
+
+The same command is available through npm:
+
+```powershell
+npm run stop
+```
+
 Both commands default to the `Release` configuration. Pass `Debug` or `Release` as the first argument to select a configuration.
 
 To recreate the portable package from scratch and create a zip archive, run:
@@ -59,10 +71,9 @@ The build writes intermediate executables to `build\bin` and creates the portabl
 
 ```text
 portable-release/
-├── exes/
-│   ├── paneacea.exe
-│   ├── paneacea-runtime.exe
-│   └── paneacea-cli.exe
+├── paneacea.exe
+├── paneacea-runtime.exe
+├── paneacea-cli.exe
 ├── Logs/
 ├── config.toml
 └── pca.cmd
@@ -133,7 +144,7 @@ Double-click a tab to rename it, drag tabs to reorder them, and right-click for 
 
 The Go runtime owns ConPTY, terminal screen emulation, process monitoring, and persistence. The Wails bridge forwards application requests to the runtime. Closing the GUI detaches the interface without terminating terminal processes, so reopening the app can reconnect to the same sessions.
 
-Runtime data is stored in `%APPDATA%\Paneacea\go-runtime\paneacea.db`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
+Runtime data is stored beside `paneacea-runtime.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
 
 ```powershell
 $env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'

@@ -1,4 +1,5 @@
 . "$PSScriptRoot\wails-env.ps1"
+. "$PSScriptRoot\test-stop-paneacea.ps1"
 go test -timeout 90s ./internal/...
 if ($LASTEXITCODE -ne 0) { throw "Go tests failed." }
 Push-Location frontend

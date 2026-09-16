@@ -3,6 +3,10 @@
   "private": true,
   "scripts": {
     "install:all": "cd frontend && npm install && cd .. && go mod download",
-    "postinstall": "npm run install:all"
+    "postinstall": "npm run install:all",
+    "start": "run.bat",
+    "build": "build.bat",
+    "package": "package.bat",
+    "stop": "scripts\\stop-paneacea.bat"
   }
 }
