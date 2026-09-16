@@ -4,7 +4,10 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
   import { bridge, bytes, call, type Settings } from "../services/backend";
-  import { terminalCursorOptions } from "../services/terminalOptions";
+  import {
+    terminalCursorOptions,
+    terminalTheme,
+  } from "../services/terminalOptions";
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
   export let id: string;
   export let active: boolean;
@@ -38,11 +41,7 @@
       lineHeight: 1.0,
       customGlyphs: terminalParameters.get("customGlyphs") !== "false",
       ...terminalCursorOptions,
-      theme: {
-        background: "#1e1e1e",
-        foreground: "#d4d4d4",
-        selectionBackground: "#264f78",
-      },
+      theme: terminalTheme,
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);

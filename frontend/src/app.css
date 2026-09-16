@@ -1,18 +1,18 @@
 :root {
   font-family: "Segoe UI", system-ui, sans-serif;
-  color: #ccc;
-  background: #1e1e1e;
+  color: #cccccc;
+  background: #0c0c0c;
   font-size: 13px;
   font-synthesis: none;
-  --editor-bg: #1e1e1e;
-  --panel-bg: #181818;
-  --tab-bg: #2d2d2d;
-  --tab-active-bg: #1e1e1e;
-  --border: #3f3f46;
-  --foreground: #ccc;
-  --muted-foreground: #858585;
-  --accent: #0078d4;
-  --focus: #4fc1ff;
+  --editor-bg: #0c0c0c;
+  --panel-bg: #111111;
+  --tab-bg: #191919;
+  --tab-active-bg: #0c0c0c;
+  --border: #343434;
+  --foreground: #cccccc;
+  --muted-foreground: #8c8c8c;
+  --accent: #3a96dd;
+  --focus: #61d6d6;
   --error: #f14c4c;
   --warning: #cca700;
   --success: #89d185;
@@ -30,11 +30,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #85858580;
-  border-radius: 4px;
+  background: #76767699;
+  border-radius: 0;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #858585b3;
+  background: #aeafad;
 }
 ::-webkit-scrollbar-button {
   display: none;
@@ -85,7 +85,7 @@ kbd {
   font-size: 10px;
   opacity: 0.6;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 0;
   padding: 2px 4px;
 }
 .application {
@@ -144,7 +144,7 @@ kbd {
 .command-trigger {
   background: var(--tab-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 3px 12px;
   min-width: 260px;
   text-align: left;
@@ -231,14 +231,14 @@ main {
   display: flex;
   flex-direction: column;
   border: 1px solid transparent;
-  background: #1e1e1e;
+  background: #0c0c0c;
 }
 .pane.active {
-  border-color: #0078d480;
+  border-color: #3a96dd;
 }
 .pane-header {
   height: 27px;
-  background: #232323;
+  background: #161616;
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -291,7 +291,7 @@ main {
   height: 100%;
 }
 .xterm .xterm-viewport {
-  background: #1e1e1e !important;
+  background: #0c0c0c !important;
 }
 .xterm .xterm-scrollable-element > .scrollbar.vertical {
   width: 6px !important;
@@ -299,7 +299,7 @@ main {
 .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
   left: 1px !important;
   width: 4px !important;
-  border-radius: 3px;
+  border-radius: 0;
 }
 .split {
   height: 100%;
@@ -335,7 +335,7 @@ main {
 .statusbar {
   height: 24px;
   flex-shrink: 0;
-  background: #0078d4;
+  background: #0037da;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -380,11 +380,11 @@ main {
 .primary {
   background: var(--accent);
   color: white;
-  border-radius: 3px;
+  border-radius: 0;
   padding: 8px 16px;
 }
 .primary:hover {
-  background: #1687de;
+  background: #3b78ff;
 }
 .danger {
   background: #8e2525;
@@ -419,7 +419,7 @@ main {
   color: #ccc;
   border: 1px solid #555;
   box-shadow: 0 12px 50px #0008;
-  border-radius: 6px;
+  border-radius: 0;
   width: 480px;
   max-width: 100%;
   padding: 22px;
@@ -511,7 +511,7 @@ main {
   border: 1px solid #555;
   box-shadow: 0 4px 16px #0008;
   padding: 5px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 .context-menu button {
   display: block;

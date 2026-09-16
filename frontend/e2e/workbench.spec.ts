@@ -541,7 +541,7 @@ test("matches the terminal viewport to the terminal background", async ({
   await page.goto("/");
   await expect(page.locator(".xterm-viewport")).toHaveCSS(
     "background-color",
-    "rgb(30, 30, 30)",
+    "rgb(12, 12, 12)",
   );
 });
 
