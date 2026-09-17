@@ -65,7 +65,7 @@ describe("terminal key ownership", () => {
       resolve(key("t", { ctrlKey: true, shiftKey: true, metaKey: true })),
     ).toBeNull();
   });
-  it("keeps registered Ctrl+Alt shortcuts usable when reported as AltGraph", () => {
+  it("does not bind the removed workspace rename shortcut as AltGraph", () => {
     const altGraph = (modifier: string) => modifier === "AltGraph";
     expect(
       resolve(
@@ -76,7 +76,7 @@ describe("terminal key ownership", () => {
           getModifierState: altGraph,
         }),
       ),
-    ).toBe("Workspace.Rename");
+    ).toBeNull();
     expect(
       resolve(
         key("€", {

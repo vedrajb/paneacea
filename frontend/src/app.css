@@ -128,6 +128,7 @@ kbd {
 .window-workspace-name {
   flex: 0 0 auto;
   color: var(--foreground);
+  font-size: 15px;
 }
 .window-workspace-separator {
   flex: 0 0 auto;
@@ -135,6 +136,7 @@ kbd {
 .window-workspace-path {
   min-width: 0;
   margin-left: 8px;
+  font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -181,7 +183,7 @@ kbd {
   margin-right: -12px;
 }
 .window-controls button {
-  width: 46px;
+  width: 52px;
   height: 39px;
   display: grid;
   place-items: center;
@@ -195,8 +197,8 @@ kbd {
   color: #fff;
 }
 .window-controls svg {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1;
@@ -260,6 +262,7 @@ kbd {
   background: #161616;
   border: 1px solid var(--border);
   box-shadow: 0 12px 32px #000c;
+  border-radius: 4px;
 }
 .workspace-selector-overlay {
   align-items: center;
@@ -540,7 +543,7 @@ main {
   color: #ccc;
   border: 1px solid #555;
   box-shadow: 0 12px 50px #0008;
-  border-radius: 0;
+  border-radius: 4px;
   width: 480px;
   max-width: 100%;
   padding: 22px;
@@ -602,6 +605,9 @@ main {
   text-align: left;
   padding: 9px;
 }
+.command-list button.active {
+  background: #ffffff12;
+}
 .command-label {
   min-width: 0;
   overflow: hidden;
@@ -619,6 +625,8 @@ main {
 }
 .command-shortcuts kbd {
   opacity: 0.9;
+  font-size: 12px;
+  text-transform: uppercase;
 }
 .command-enter {
   margin-left: 3px;
@@ -632,7 +640,7 @@ main {
   border: 1px solid #555;
   box-shadow: 0 4px 16px #0008;
   padding: 5px;
-  border-radius: 0;
+  border-radius: 4px;
 }
 .context-menu button {
   display: block;

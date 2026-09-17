@@ -49,6 +49,7 @@
     query = "",
     settingsOpen = false,
     workspaceListOpen = false;
+  let paletteIndex = 0;
   let workspaceListIndex = 0;
   let profiles: Profile[] = [];
   let draft: Settings;
@@ -278,6 +279,7 @@
         return;
       case "Paneacea.CommandPalette":
         query = "";
+        paletteIndex = 0;
         palette = true;
         return;
       case "Paneacea.Settings":
@@ -429,6 +431,16 @@
     workspaceListIndex = index >= 0 ? index : 0;
     workspaceListOpen = true;
   }
+  function movePaletteSelection(direction: number) {
+    if (!filtered.length) return;
+    paletteIndex =
+      (paletteIndex + direction + filtered.length) % filtered.length;
+    requestAnimationFrame(() =>
+      document
+        .querySelectorAll<HTMLButtonElement>(".command-list button")
+        [paletteIndex]?.scrollIntoView({ block: "nearest" }),
+    );
+  }
   function focusWorkspaceSelector(node: HTMLElement) {
     requestAnimationFrame(() =>
       node
@@ -477,6 +489,15 @@
       shortcutsOpen ||
       menu;
     if (!popupOpen) return;
+    if (
+      palette &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      movePaletteSelection(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -497,7 +518,8 @@
         if (palette) {
           event.preventDefault();
           event.stopPropagation();
-          if (filtered.length) execute(filtered[0][0]);
+          const selected = filtered[paletteIndex] ?? filtered[0];
+          if (selected) execute(selected[0]);
           return;
         }
         if (modal) {
@@ -763,13 +785,6 @@
           on:click={() => execute("Terminal.NewTab")}>+</button
         >
         <div class="spacer"></div>
-        <button
-          title="Split right"
-          on:click={() => execute("Terminal.SplitPaneRight")}>◫</button
-        ><button
-          title="Split down"
-          on:click={() => execute("Terminal.SplitPaneDown")}>⬒</button
-        >
       </div>
       {#if runtimeRestartToast}<div
           class="runtime-restart-toast"
@@ -862,11 +877,15 @@
         aria-label="Search commands"
         placeholder="Type a command…"
         bind:value={query}
+        on:input={() => (paletteIndex = 0)}
         use:autofocus
       />
       <div class="command-list">
-        {#each filtered as [action, label]}
-          <button on:click={() => execute(action)}>
+        {#each filtered as [action, label], index}
+          <button
+            class:active={index === paletteIndex}
+            on:click={() => execute(action)}
+          >
             <span class="command-label">{label}</span>
             <span class="command-shortcuts">
               {#each shortcutsForAction(

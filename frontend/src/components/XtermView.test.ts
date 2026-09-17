@@ -4,9 +4,9 @@ import {
   terminalTheme,
 } from "../services/terminalOptions";
 
-test("uses a bar cursor when a terminal is unfocused", () => {
+test("hides the cursor when a terminal is unfocused", () => {
   expect(terminalCursorOptions.cursorStyle).toBe("bar");
-  expect(terminalCursorOptions.cursorInactiveStyle).toBe("bar");
+  expect(terminalCursorOptions.cursorInactiveStyle).toBe("none");
   expect(terminalCursorOptions.cursorWidth).toBe(2);
 });
 

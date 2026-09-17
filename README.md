@@ -116,7 +116,6 @@ Use the command palette (`Ctrl+Shift+P`) for commands such as `Terminal: Split R
 | Ctrl+Alt+Left | Previous tab |
 | Ctrl+B | Open workspace selector |
 | Ctrl+N | New workspace |
-| Ctrl+Alt+R | Rename workspace |
 | Ctrl+T | New tab |
 | Ctrl+W | Close current tab and its panes |
 | Ctrl+Shift+W | Close the focused pane |

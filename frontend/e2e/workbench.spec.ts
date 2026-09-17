@@ -582,6 +582,35 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   ).toBeVisible();
 });
 
+test("navigates, runs, and dismisses the command palette with the keyboard", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTitle("Command palette", { exact: true }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const commands = palette.locator(".command-list button");
+  await expect(commands.nth(0)).toHaveClass(/active/);
+  await page.keyboard.press("ArrowDown");
+  await expect(commands.nth(1)).toHaveClass(/active/);
+  await page.keyboard.press("ArrowUp");
+  await expect(commands.nth(0)).toHaveClass(/active/);
+  await page.keyboard.press("Enter");
+  await expect(palette).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).testCalls.filter(
+            (call: any) => call.method === "tab.create",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  await page.getByTitle("Command palette", { exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(palette).toHaveCount(0);
+});
+
 test("focuses the selected tab's first pane after startup", async ({ page }) => {
   await page.goto("/?startupFirstPane");
   const firstTerminal = page.locator(
@@ -707,15 +736,6 @@ test("uses a collapsed workspace rail with bottom-pinned Settings", async ({
   expect(settings!.y + settings!.height).toBeGreaterThanOrEqual(
     sidebarBox!.y + sidebarBox!.height - 8,
   );
-});
-
-test("renames the active workspace with Ctrl+Alt+R", async ({ page }) => {
-  await page.goto("/");
-  await page.locator(".xterm-helper-textarea").focus();
-  await page.keyboard.press("Control+Alt+r");
-  await expect(
-    page.getByRole("heading", { name: "Rename workspace", exact: true }),
-  ).toBeVisible();
 });
 
 test("passes unbound Tab to the focused terminal", async ({ page }) => {

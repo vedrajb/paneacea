@@ -43,7 +43,6 @@ export const defaults: Record<string, Action> = {
   "Ctrl+=": "Terminal.IncreaseFontSize",
   "Ctrl+-": "Terminal.DecreaseFontSize",
   "Ctrl+Shift+/": "Help.ShowShortcuts",
-  "Ctrl+Alt+r": "Workspace.Rename",
   "Ctrl+Shift+w": "Terminal.ClosePane",
   "Alt+Shift+d": "Terminal.SplitPaneAuto",
   "Alt+Shift+-": "Terminal.SplitPaneDown",
