@@ -104,7 +104,7 @@ Keep all three executables in the same directory. A separately installed Wails C
 
 ## Usage
 
-After launch, create a workspace, choose its root folder, and open a terminal tab. The first launch detects Git Bash, PowerShell 7, Windows PowerShell, and Command Prompt. The collapsed left rail opens the workspace selector, creates workspaces, and provides Settings. Use Settings to choose the default shell, font size, scrollback, appearance, and custom keybindings.
+After launch, create a workspace, choose its root folder, and open a terminal tab. The first launch detects Git Bash, PowerShell 7, Windows PowerShell, and Command Prompt. The collapsed left rail opens the workspace selector, creates workspaces, and provides Settings. Use Settings to choose the default shell, font size, scrollback, appearance, and custom keybindings. Reuse `frontend/src/theme.css` as the color-token template for additional themes.
 
 Press `Ctrl+B` to open the centered workspace selector. Use Up/Down to choose a workspace, Enter to switch, or Escape to cancel.
 

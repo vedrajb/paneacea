@@ -971,12 +971,6 @@
           bind:value={draft.scrollback}
         /></label
       ><label
-        >Appearance<select bind:value={draft.theme}
-          ><option value="dark">Dark</option><option value="light"
-            >Light chrome / dark terminal</option
-          ></select
-        ></label
-      ><label
         >Custom keybindings<textarea
           rows="7"
           bind:value={bindings}

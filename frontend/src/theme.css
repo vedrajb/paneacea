@@ -1,0 +1,24 @@
+:root {
+  --editor-bg: #0c0c0c;
+  --panel-bg: #111111;
+  --tab-bg: #191919;
+  --tab-active-bg: #0c0c0c;
+  --border: #343434;
+  --foreground: #cccccc;
+  --muted-foreground: #8c8c8c;
+  --accent: #3a96dd;
+  --focus: #6a9bc3;
+  --error: #f14c4c;
+  --warning: #cca700;
+  --success: #89d185;
+}
+
+.light {
+  --editor-bg: #f3f3f3;
+  --panel-bg: #e3e3e3;
+  --tab-bg: #ececec;
+  --tab-active-bg: #fff;
+  --border: #c5c5c5;
+  --foreground: #333;
+  --muted-foreground: #777;
+}
