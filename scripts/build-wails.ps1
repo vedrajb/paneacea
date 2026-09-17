@@ -16,6 +16,10 @@ try {
     npm run build
     if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
 } finally { Pop-Location }
+node (Join-Path $projectDirectory "frontend\scripts\generate-windows-icon.mjs")
+if ($LASTEXITCODE -ne 0) { throw "Windows icon generation failed." }
+go run .\scripts\generate-windows-resource.go -icon .\build\icon-assets\paneacea.ico -out .\cmd\paneacea\paneacea_windows_amd64.syso
+if ($LASTEXITCODE -ne 0) { throw "Windows resource generation failed." }
 go build -trimpath -o build/bin/paneacea-runtime.exe ./cmd/paneacea-runtime
 if ($LASTEXITCODE -ne 0) { throw "Runtime build failed." }
 go build -trimpath -o build/bin/paneacea-cli.exe ./cmd/paneacea-cli

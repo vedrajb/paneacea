@@ -36,6 +36,8 @@
   import runtimeDisconnectedIconUrl from "../../icons/subtract-color-outline.svg?url";
   import trayDarkUrl from "../../icons/paneacea-tray-dark.svg?url";
   import trayLightUrl from "../../icons/paneacea-tray-light.svg?url";
+  import workspaceIconUrl from "../../icons/paneacea-workspace.svg?url";
+  import settingsIconUrl from "../../icons/paneacea-settings.svg?url";
   let state: State | null = null;
   let workspace: Workspace | undefined;
   let tab: Tab | undefined;
@@ -101,6 +103,16 @@
   }
   function toggleWindowMaximise() {
     window.runtime?.WindowToggleMaximise();
+  }
+  function toggleWindowMaximiseFromTitlebar(event: MouseEvent) {
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !target.closest(".titlebar") ||
+      target.closest("button, .titlebar-actions")
+    )
+      return;
+    toggleWindowMaximise();
   }
   function closeWindow() {
     window.runtime?.Quit();
@@ -620,7 +632,11 @@
   });
 </script>
 
-<svelte:window on:keydown|capture={popupKey} on:keydown={globalKey} />
+<svelte:window
+  on:keydown|capture={popupKey}
+  on:keydown={globalKey}
+  on:dblclick={toggleWindowMaximiseFromTitlebar}
+/>
 <div class="application" class:light={state?.settings.theme === "light"}>
   <header class="titlebar">
     <div class="brand"><img
@@ -683,9 +699,7 @@
           aria-label="Workspaces"
           aria-expanded={workspaceListOpen}
           on:click={openWorkspaceSelector}
-          ><svg viewBox="0 0 24 24" aria-hidden="true"><path
-              d="M4 5.5h6.5v5H4zM13.5 5.5H20v5h-6.5zM4 13.5h6.5v5H4zM13.5 13.5H20v5h-6.5z"
-            /></svg></button
+          ><img class="sidebar-icon" src={workspaceIconUrl} alt="" /></button
         ><button
           title="New workspace"
           aria-label="New workspace"
@@ -698,9 +712,7 @@
         title="Settings"
         aria-label="Settings"
         on:click={() => execute("Paneacea.Settings")}
-        ><svg viewBox="0 0 24 24" aria-hidden="true"><path
-            d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Zm8 3.75 1.5-1-1.5-2.6-1.75.5a6.7 6.7 0 0 0-1.7-1L16.3 6h-3l-.75 1.9a6.7 6.7 0 0 0-1.7 1L9.1 8.4 7.6 11l1.5 1a6.2 6.2 0 0 0 0 2l-1.5 1 1.5 2.6 1.75-.5a6.7 6.7 0 0 0 1.7 1l.75 1.9h3l.75-1.9a6.7 6.7 0 0 0 1.7-1l1.75.5 1.5-2.6-1.5-1a6.2 6.2 0 0 0 0-2Z"
-          /></svg></button
+        ><img class="sidebar-icon" src={settingsIconUrl} alt="" /></button
       >
     </aside>
     <main>

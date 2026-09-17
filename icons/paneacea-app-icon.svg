@@ -1,58 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">Paneacea application icon</title>
-  <desc id="desc">Four terminal panes surrounding a cyan and green sparkle on a dark rounded square.</desc>
-  <defs>
-    <linearGradient id="background" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1B2736"/>
-      <stop offset="0.52" stop-color="#101A26"/>
-      <stop offset="1" stop-color="#09111A"/>
-    </linearGradient>
-    <linearGradient id="topLeft" x1="176" y1="168" x2="452" y2="464" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#334356"/>
-      <stop offset="1" stop-color="#172536"/>
-    </linearGradient>
-    <linearGradient id="topRight" x1="560" y1="168" x2="856" y2="464" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#426784"/>
-      <stop offset="1" stop-color="#1D3852"/>
-    </linearGradient>
-    <linearGradient id="bottomLeft" x1="176" y1="560" x2="452" y2="856" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#38526C"/>
-      <stop offset="1" stop-color="#1B2D42"/>
-    </linearGradient>
-    <linearGradient id="bottomRight" x1="560" y1="560" x2="856" y2="856" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2E7478"/>
-      <stop offset="1" stop-color="#183F49"/>
-    </linearGradient>
-    <linearGradient id="spark" x1="418" y1="408" x2="615" y2="622" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#41D9FF"/>
-      <stop offset="0.48" stop-color="#29E5DE"/>
-      <stop offset="1" stop-color="#55F0A4"/>
-    </linearGradient>
-    <linearGradient id="terminal" x1="242" y1="278" x2="416" y2="394" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F6FBFF"/>
-      <stop offset="1" stop-color="#BFD9EF"/>
-    </linearGradient>
-    <filter id="sparkGlow" x="-60%" y="-60%" width="220%" height="220%" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="18" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.12 0 0 0 0 0.90 0 0 0 0 0.88 0 0 0 0.75 0"/>
-      <feMerge>
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-
-  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#background)"/>
-  <rect x="39" y="39" width="946" height="946" rx="213" fill="none" stroke="#334A62" stroke-width="14" opacity="0.72"/>
-
-  <rect x="160" y="160" width="310" height="310" rx="78" fill="url(#topLeft)" stroke="#50657C" stroke-width="7"/>
-  <rect x="554" y="160" width="310" height="310" rx="78" fill="url(#topRight)" stroke="#6B8EAA" stroke-width="7"/>
-  <rect x="160" y="554" width="310" height="310" rx="78" fill="url(#bottomLeft)" stroke="#526E88" stroke-width="7"/>
-  <rect x="554" y="554" width="310" height="310" rx="78" fill="url(#bottomRight)" stroke="#438188" stroke-width="7"/>
-
-  <path d="M512 351C522 419 528 458 551 475C571 490 607 502 674 512C607 522 571 534 551 549C528 566 522 605 512 673C502 605 496 566 473 549C453 534 417 522 350 512C417 502 453 490 473 475C496 458 502 419 512 351Z" fill="#0A1822" stroke="#0A1822" stroke-width="26" stroke-linejoin="round" opacity="0.93"/>
-  <path d="M512 360C521 423 528 459 548 477C566 493 600 503 664 512C600 521 566 531 548 547C528 565 521 601 512 664C503 601 496 565 476 547C458 531 424 521 360 512C424 503 458 493 476 477C496 459 503 423 512 360Z" fill="url(#spark)" filter="url(#sparkGlow)"/>
-
-  <path d="M251 287L309 345L251 403" fill="none" stroke="url(#terminal)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M346 403H414" fill="none" stroke="url(#terminal)" stroke-width="31" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="64" y="64" width="896" height="896" rx="180" fill="#111827"/>
+  <g fill="#0B1220" stroke="#6A9BC3" stroke-width="22" stroke-linejoin="round">
+    <rect x="170" y="190" width="420" height="644" rx="34"/>
+    <rect x="608" y="190" width="246" height="300" rx="34"/>
+    <rect x="608" y="508" width="246" height="326" rx="34"/>
+  </g>
+  <path d="M248 292 L330 374 L248 456" fill="none" stroke="#00E5F0" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="350" y="420" width="120" height="30" rx="15" fill="#00E5F0"/>
+  <rect x="228" y="548" width="230" height="26" rx="13" fill="#6A9BC3"/>
+  <rect x="228" y="612" width="160" height="26" rx="13" fill="#6A9BC3"/>
+  <rect x="228" y="676" width="102" height="26" rx="13" fill="#6A9BC3"/>
+  <rect x="660" y="250" width="136" height="24" rx="12" fill="#6A9BC3"/>
+  <rect x="660" y="318" width="100" height="24" rx="12" fill="#11D7A7"/>
+  <rect x="660" y="386" width="150" height="24" rx="12" fill="#6A9BC3"/>
+  <rect x="660" y="570" width="112" height="24" rx="12" fill="#1597F5"/>
+  <rect x="660" y="638" width="150" height="24" rx="12" fill="#3A7FB8"/>
+  <rect x="660" y="706" width="104" height="24" rx="12" fill="#3A7FB8"/>
 </svg>

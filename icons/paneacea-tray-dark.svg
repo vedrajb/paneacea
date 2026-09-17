@@ -1,13 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-labelledby="title desc">
-  <title id="title">Paneacea dark tray icon</title>
-  <desc id="desc">A compact dark four-pane Paneacea mark for light system trays.</desc>
-  <g fill="#17283A">
-    <rect x="1.75" y="1.75" width="8.25" height="8.25" rx="2.3"/>
-    <rect x="14" y="1.75" width="8.25" height="8.25" rx="2.3"/>
-    <rect x="1.75" y="14" width="8.25" height="8.25" rx="2.3"/>
-    <rect x="14" y="14" width="8.25" height="8.25" rx="2.3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <g fill="none" stroke="#111827" stroke-width="34" stroke-linejoin="round">
+    <rect x="170" y="190" width="420" height="644" rx="38"/>
+    <rect x="608" y="190" width="246" height="300" rx="38"/>
+    <rect x="608" y="508" width="246" height="326" rx="38"/>
   </g>
-  <path d="M12 6.65C12.38 9.2 12.75 10.35 14.15 11.1C15.05 11.58 16.05 11.78 17.35 12C16.05 12.22 15.05 12.42 14.15 12.9C12.75 13.65 12.38 14.8 12 17.35C11.62 14.8 11.25 13.65 9.85 12.9C8.95 12.42 7.95 12.22 6.65 12C7.95 11.78 8.95 11.58 9.85 11.1C11.25 10.35 11.62 9.2 12 6.65Z" fill="#F5FAFE" stroke="#F5FAFE" stroke-width="1.15" stroke-linejoin="round"/>
-  <path d="M12 7.8C12.28 9.65 12.63 10.55 13.65 11.15C14.35 11.56 15.05 11.75 16.2 12C15.05 12.25 14.35 12.44 13.65 12.85C12.63 13.45 12.28 14.35 12 16.2C11.72 14.35 11.37 13.45 10.35 12.85C9.65 12.44 8.95 12.25 7.8 12C8.95 11.75 9.65 11.56 10.35 11.15C11.37 10.55 11.72 9.65 12 7.8Z" fill="#17283A"/>
-  <path d="M4.15 4.15L5.75 5.75L4.15 7.35M6.65 7.35H8" fill="none" stroke="#F5FAFE" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M248 292 L330 374 L248 456" fill="none" stroke="#111827" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="350" y="418" width="120" height="34" rx="17" fill="#111827"/>
+  <rect x="228" y="552" width="230" height="30" rx="15" fill="#111827"/>
+  <rect x="228" y="620" width="160" height="30" rx="15" fill="#111827"/>
+  <rect x="660" y="258" width="136" height="28" rx="14" fill="#111827"/>
+  <rect x="660" y="326" width="100" height="28" rx="14" fill="#111827"/>
+  <rect x="660" y="578" width="112" height="28" rx="14" fill="#111827"/>
+  <rect x="660" y="646" width="150" height="28" rx="14" fill="#111827"/>
 </svg>

@@ -111,9 +111,9 @@ kbd {
   align-items: center;
 }
 .brand-icon {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   object-fit: contain;
 }
 .window-title {
@@ -142,7 +142,7 @@ kbd {
 .command-trigger {
   background: var(--tab-bg);
   border: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: 3px;
   padding: 3px 12px;
   min-width: 260px;
   text-align: left;
@@ -247,6 +247,10 @@ kbd {
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.sidebar-icon {
+  width: 21px;
+  height: 21px;
 }
 .workspace-list {
   width: min(520px, 100%);

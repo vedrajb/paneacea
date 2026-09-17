@@ -18,5 +18,6 @@ wails-prototype/
 /frontend/playwright-report/
 /frontend/test-results/
 /build/
+/cmd/paneacea/paneacea_windows_amd64.syso
 
 node_modules

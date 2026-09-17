@@ -304,6 +304,7 @@ test("uses the workspace header as draggable window chrome", async ({ page }) =>
   );
   await page.getByTitle("Minimise").click();
   await page.getByTitle("Maximise or restore").click();
+  await page.locator(".window-title").dblclick();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect
     .poll(() =>
@@ -313,7 +314,12 @@ test("uses the workspace header as draggable window chrome", async ({ page }) =>
           .map((entry: any) => entry.method),
       ),
     )
-    .toEqual(["window.minimise", "window.maximise", "window.close"]);
+    .toEqual([
+      "window.minimise",
+      "window.maximise",
+      "window.maximise",
+      "window.close",
+    ]);
 });
 
 test("shows an auto-dismissing runtime restart toast", async ({ page }) => {
