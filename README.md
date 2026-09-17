@@ -6,6 +6,7 @@ A Windows terminal workspace app built with Wails, Svelte, and a persistent Go r
 
 - Windows 10 version 1809 or later, or Windows 11 (x64)
 - WebView2 Runtime
+- Microsoft Edge (used to render the Windows application icon during builds)
 - Go 1.24.2 or newer
 - Node.js 20.19 or newer
 - Internet access on the first dependency installation and build
@@ -85,6 +86,8 @@ portable-release/
 .\portable-release\pca.cmd
 ```
 
+The build regenerates the executable and taskbar icon from `icons\paneacea-app-icon.svg`. Use `build-wails.ps1` when building the desktop application; a direct `go build` uses the most recently generated Windows icon resource.
+
 The intermediate build output contains:
 
 - `paneacea.exe` — Wails desktop application
@@ -151,7 +154,7 @@ $env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'
 .\build\bin\paneacea.exe
 ```
 
-The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A full runtime restart restores saved workspace, tab, pane, and launch configuration and starts fresh shell processes.
+The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A normal shell exit closes its pane and removes its saved record, so only active shell panes are restored after a runtime restart. Restored panes use their saved workspace, tab, pane, and launch configuration to start fresh shell processes.
 
 Closing the Paneacea window stops active registered agent panes while leaving ordinary terminal panes running. Starting Paneacea again relaunches those agent sessions from their captured session IDs and waits for the next prompt.
 
