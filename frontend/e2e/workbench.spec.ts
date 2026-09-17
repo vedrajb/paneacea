@@ -96,6 +96,16 @@ test.beforeEach(async ({ page }) => {
         App: {
           Call: async (method: string, params: any) => {
             calls.push({ method, params });
+            if (
+              method === "state.get" &&
+              window.location.search.includes("runtimeDisconnected")
+            )
+              throw new Error("runtime unavailable");
+            if (
+              method === "pane.focus" &&
+              window.location.search.includes("pipeClosed")
+            )
+              throw new Error("The pipe is being closed.");
             const w = state.workspaces.find(
                 (entry: any) =>
                   entry.id === (params.workspaceId ?? state.activeWorkspaceId),
@@ -186,6 +196,8 @@ test.beforeEach(async ({ page }) => {
             id: string,
             sequence: number,
           ) => {
+            if (window.location.search.includes("terminalDisconnected"))
+              throw new Error("runtime unavailable");
             if (!streams.has(streamID)) {
               streams.add(streamID);
               calls.push({ method: "terminal.output", id });
@@ -256,6 +268,51 @@ test.beforeEach(async ({ page }) => {
       },
     };
   });
+});
+
+test("shows runtime connection icons", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTitle("Runtime connected")).toHaveAttribute(
+    "src",
+    /%2301A601/,
+  );
+
+  await page.goto("/?runtimeDisconnected");
+  await expect(page.getByTitle("Runtime disconnected")).toHaveAttribute(
+    "src",
+    /%23FC4032/,
+  );
+});
+
+test("shows an auto-dismissing runtime restart toast", async ({ page }) => {
+  await page.goto("/?startupFirstPane&pipeClosed");
+  await page.locator('[data-pane="p"] .xterm-helper-textarea').focus();
+  const toast = page.getByText("Restarting runtime...");
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveCSS("background-color", "rgb(37, 37, 38)");
+  await expect(toast).toHaveCSS("border-top-left-radius", "6px");
+  await expect(toast).toHaveCSS("font-size", "14px");
+  const toastBox = await toast.boundingBox();
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  expect(toastBox).not.toBeNull();
+  expect(toastBox!.y).toBeGreaterThan(viewportHeight / 2);
+  await expect(
+    page.getByText("The pipe is being closed."),
+  ).toHaveCount(0);
+  await expect(page.getByText("Restarting runtime...")).toHaveCount(0, {
+    timeout: 4000,
+  });
+});
+
+test("handles named-pipe shutdown as a runtime disconnection", async ({
+  page,
+}) => {
+  await page.goto("/?startupFirstPane&pipeClosed");
+  await page.locator('[data-pane="p"] .xterm-helper-textarea').focus();
+  await expect(
+    page.getByText("Restarting runtime..."),
+  ).toBeVisible();
+  await expect(page.getByText("The pipe is being closed.")).toHaveCount(0);
 });
 
 test("renders terminal, splits, resizes, and renames a tab", async ({

@@ -165,12 +165,11 @@ kbd {
 .titlebar-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
 }
 .runtime-status {
-  color: #b7e3c2;
-  font-size: 11px;
-  white-space: nowrap;
+  width: 23px;
+  height: 23px;
+  object-fit: contain;
 }
 .workbench {
   flex: 1;
@@ -426,9 +425,6 @@ main {
 .splitter:focus {
   background: var(--accent);
 }
-.offline {
-  color: #f2c994;
-}
 .welcome {
   height: 100%;
   display: flex;
@@ -474,6 +470,20 @@ main {
   align-items: center;
   padding: 3px 10px;
   font-size: 12px;
+}
+.runtime-restart-toast {
+  position: fixed;
+  z-index: 40;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #252526;
+  color: #cccccc;
+  border: 1px solid #454545;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px #0008;
+  padding: 8px 12px;
+  font-size: 14px;
 }
 .error-banner span {
   flex: 1;

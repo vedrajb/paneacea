@@ -16,7 +16,7 @@ type App struct {
 	streams map[string]*ipc.Client
 }
 
-func New() *App                            { return &App{streams: map[string]*ipc.Client{}} }
+func New() *App { return &App{streams: map[string]*ipc.Client{}} }
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	_, _ = a.Call("agent.restore", nil)

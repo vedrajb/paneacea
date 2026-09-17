@@ -32,12 +32,15 @@
   import { tabLabel } from "./services/tabLabel";
   import appIconUrl from "../../icons/paneacea-app-icon.svg?url";
   import logoUrl from "../../icons/paneacea-logo-transparent.svg?url";
+  import runtimeConnectedIconUrl from "../../icons/success-green-check-mark.svg?url";
+  import runtimeDisconnectedIconUrl from "../../icons/subtract-color-outline.svg?url";
   import trayDarkUrl from "../../icons/paneacea-tray-dark.svg?url";
   import trayLightUrl from "../../icons/paneacea-tray-light.svg?url";
   let state: State | null = null;
   let workspace: Workspace | undefined;
   let tab: Tab | undefined;
   let connected = false,
+    runtimeRestartToast = false,
     errorMessage = "",
     busy = false;
   let palette = false,
@@ -68,6 +71,7 @@
   let fontChanges: Promise<void> = Promise.resolve();
   let startupFocusPending = true;
   let focusGeneration = 0;
+  let runtimeRestartTimer: ReturnType<typeof setTimeout> | undefined;
   $: workspace = state?.workspaces.find(
     (w) => w.id === state?.activeWorkspaceId,
   );
@@ -79,11 +83,31 @@
     ([, label]) => label.toLowerCase().includes(query.toLowerCase()),
   );
   function error(message: string) {
+    const normalizedMessage = message.toLowerCase();
+    if (
+      normalizedMessage.includes("disconnected") ||
+      normalizedMessage.includes("runtime unavailable") ||
+      normalizedMessage.includes("pipe is being closed")
+    ) {
+      connected = false;
+      showRuntimeRestartToast();
+      errorMessage = "";
+      return;
+    }
     errorMessage = message;
   }
   function apply(next: State) {
     if (!state || next.revision > state.revision) state = next;
     connected = true;
+    runtimeRestartToast = false;
+    clearTimeout(runtimeRestartTimer);
+  }
+  function showRuntimeRestartToast() {
+    runtimeRestartToast = true;
+    clearTimeout(runtimeRestartTimer);
+    runtimeRestartTimer = setTimeout(() => {
+      runtimeRestartToast = false;
+    }, 3000);
   }
   function firstPaneId(): string | undefined {
     let node = tab?.rootLayoutNode;
@@ -124,7 +148,7 @@
         startupFocusPending = false;
     } catch (e) {
       connected = false;
-      error(String(e));
+      showRuntimeRestartToast();
     }
   }
   async function mutate(method: string, params: unknown = {}) {
@@ -581,6 +605,7 @@
     return () => {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(runtimeRestartTimer);
       window.removeEventListener("focus", refocusTerminal);
     };
   });
@@ -606,11 +631,12 @@
       on:click={() => execute("Paneacea.CommandPalette")}
       >Search commands <kbd>Ctrl Shift P</kbd></button
     ><div class="titlebar-actions">
-      <span
+      <img
         class="runtime-status"
-        class:offline={!connected}
-        role="status"
-        >{connected ? "● Runtime connected" : "○ Runtime disconnected"}</span>
+        src={connected ? runtimeConnectedIconUrl : runtimeDisconnectedIconUrl}
+        alt={connected ? "Runtime connected" : "Runtime disconnected"}
+        title={connected ? "Runtime connected" : "Runtime disconnected"}
+      />
     </div>
   </header>
   <div class="workbench">
@@ -698,6 +724,13 @@
           on:click={() => execute("Terminal.SplitPaneDown")}>⬒</button
         >
       </div>
+      {#if runtimeRestartToast}<div
+          class="runtime-restart-toast"
+          role="alert"
+        >
+          Restarting runtime...
+        </div>
+      {/if}
       {#if errorMessage}<div class="error-banner" role="alert">
           <span>{errorMessage}</span><button
             title="Dismiss error"
