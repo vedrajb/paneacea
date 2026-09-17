@@ -104,13 +104,11 @@ kbd {
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   gap: 28px;
+  --wails-draggable: drag;
 }
 .brand {
-  font-weight: 600;
-  letter-spacing: 0.3px;
   display: flex;
   align-items: center;
-  gap: 7px;
 }
 .brand-icon {
   width: 22px;
@@ -165,11 +163,43 @@ kbd {
 .titlebar-actions {
   display: flex;
   align-items: center;
+  align-self: stretch;
 }
 .runtime-status {
   width: 23px;
   height: 23px;
   object-fit: contain;
+  margin-right: 12px;
+  --wails-drop-target: drop;
+}
+.titlebar button {
+  --wails-drop-target: drop;
+}
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  margin-right: -12px;
+}
+.window-controls button {
+  width: 46px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.window-controls button:hover {
+  background: #ffffff16;
+}
+.window-controls .window-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.window-controls svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
 }
 .workbench {
   flex: 1;

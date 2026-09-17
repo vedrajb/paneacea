@@ -90,6 +90,11 @@ test.beforeEach(async ({ page }) => {
     };
     (window as any).testCalls = calls;
     (window as any).testFocusRace = focusRace;
+    (window as any).runtime = {
+      WindowMinimise: () => calls.push({ method: "window.minimise" }),
+      WindowToggleMaximise: () => calls.push({ method: "window.maximise" }),
+      Quit: () => calls.push({ method: "window.close" }),
+    };
     const streams = new Set<string>();
     window.go = {
       desktop: {
@@ -282,6 +287,33 @@ test("shows runtime connection icons", async ({ page }) => {
     "src",
     /%23FC4032/,
   );
+});
+
+test("uses an icon-only title-bar brand", async ({ page }) => {
+  await page.goto("/");
+  const brand = page.locator(".brand");
+  await expect(brand).toHaveText("");
+  await expect(brand.getByTitle("Paneacea")).toBeVisible();
+});
+
+test("uses the workspace header as draggable window chrome", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".titlebar")).toHaveCSS(
+    "--wails-draggable",
+    "drag",
+  );
+  await page.getByTitle("Minimise").click();
+  await page.getByTitle("Maximise or restore").click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls
+          .filter((entry: any) => entry.method.startsWith("window."))
+          .map((entry: any) => entry.method),
+      ),
+    )
+    .toEqual(["window.minimise", "window.maximise", "window.close"]);
 });
 
 test("shows an auto-dismissing runtime restart toast", async ({ page }) => {

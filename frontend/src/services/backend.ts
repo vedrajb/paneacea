@@ -82,6 +82,11 @@ type Bridge = {
 declare global {
   interface Window {
     go?: { desktop?: { App?: Bridge } };
+    runtime?: {
+      WindowMinimise(): void;
+      WindowToggleMaximise(): void;
+      Quit(): void;
+    };
   }
 }
 export function bridge(): Bridge {

@@ -23,7 +23,7 @@ func main() {
 	app := desktop.New()
 	assets, err := fs.Sub(frontend.Assets, "dist")
 	if err == nil {
-		err = wails.Run(&options.App{Title: "Paneacea", Width: 1400, Height: 900, MinWidth: 760, MinHeight: 480, BackgroundColour: options.NewRGB(30, 30, 30), AssetServer: &assetserver.Options{Assets: assets}, OnStartup: app.Startup, OnShutdown: app.Shutdown, Bind: []interface{}{app}})
+		err = wails.Run(&options.App{Title: "Paneacea", Width: 1400, Height: 900, MinWidth: 760, MinHeight: 480, Frameless: true, BackgroundColour: options.NewRGB(30, 30, 30), AssetServer: &assetserver.Options{Assets: assets}, OnStartup: app.Startup, OnShutdown: app.Shutdown, Bind: []interface{}{app}})
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -96,6 +96,15 @@
     }
     errorMessage = message;
   }
+  function minimiseWindow() {
+    window.runtime?.WindowMinimise();
+  }
+  function toggleWindowMaximise() {
+    window.runtime?.WindowToggleMaximise();
+  }
+  function closeWindow() {
+    window.runtime?.Quit();
+  }
   function apply(next: State) {
     if (!state || next.revision > state.revision) state = next;
     connected = true;
@@ -617,9 +626,9 @@
     <div class="brand"><img
         class="brand-icon"
         src={appIconUrl}
-        alt=""
-        aria-hidden="true"
-      /> <span>Paneacea</span></div>
+        alt="Paneacea"
+        title="Paneacea"
+      /></div>
     <span
       class="window-title"
       title={workspace ? `${workspace.name} ${workspace.rootDirectory}` : undefined}
@@ -637,6 +646,32 @@
         alt={connected ? "Runtime connected" : "Runtime disconnected"}
         title={connected ? "Runtime connected" : "Runtime disconnected"}
       />
+      <div class="window-controls" aria-label="Window controls">
+        <button
+          title="Minimise"
+          aria-label="Minimise"
+          on:click|stopPropagation={minimiseWindow}
+          ><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg></button
+        ><button
+          title="Maximise or restore"
+          aria-label="Maximise or restore"
+          on:click|stopPropagation={toggleWindowMaximise}
+          ><svg viewBox="0 0 10 10" aria-hidden="true"><rect
+                x="1.5"
+                y="1.5"
+                width="7"
+                height="7"
+              /></svg></button
+        ><button
+          class="window-close"
+          title="Close"
+          aria-label="Close"
+          on:click|stopPropagation={closeWindow}
+          ><svg viewBox="0 0 10 10" aria-hidden="true"><path
+                d="m1.5 1.5 7 7m0-7-7 7"
+              /></svg></button
+        >
+      </div>
     </div>
   </header>
   <div class="workbench">
