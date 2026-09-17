@@ -76,12 +76,6 @@ func New(store Storage) (*Runtime, error) {
 	r.cancel = cancel
 	r.mu.Lock()
 	for _, p := range state.Panes {
-		if p.Status == "exited" {
-			o := newOutput()
-			o.exit()
-			r.outputs[p.ID] = o
-			continue
-		}
 		if err = r.launch(p); err != nil {
 			p.Status = "error"
 			p.Error = err.Error()
@@ -248,19 +242,10 @@ func (r *Runtime) launch(p *model.Pane) error {
 				delete(r.stoppingAgents, p.ID)
 				return
 			}
-			if current := r.state.Panes[p.ID]; current != nil {
-				current.Status = "exited"
-				current.PID = 0
-				if current.Agent != nil {
-					current.Agent.State = "done"
-				}
-				if exitErr != nil {
-					current.Error = exitErr.Error()
-				}
+			if r.state.Panes[p.ID] != nil {
+				r.removePane(p.ID)
 				r.state.Revision++
-				if err := r.store.Save(r.state); err != nil {
-					current.Error = err.Error()
-				}
+				_ = r.store.Save(r.state)
 			}
 		},
 	})
@@ -787,6 +772,26 @@ func (r *Runtime) closeTab(w *model.Workspace, t *model.Tab) {
 		if len(w.Tabs) > 0 {
 			w.ActiveTabID = w.Tabs[0].ID
 		}
+	}
+}
+func (r *Runtime) removePane(id string) {
+	pane := r.state.Panes[id]
+	if pane == nil {
+		return
+	}
+	delete(r.state.Panes, id)
+	delete(r.sessions, id)
+	w, tab := r.state.Tab(pane.TabID)
+	if tab == nil {
+		return
+	}
+	tab.RootLayoutNode = tab.RootLayoutNode.Remove(id)
+	if tab.RootLayoutNode == nil {
+		r.closeTab(w, tab)
+		return
+	}
+	if tab.ActivePaneID == id {
+		tab.ActivePaneID = tab.RootLayoutNode.Leaves()[0]
 	}
 }
 func (r *Runtime) register(pane *model.Pane, agent *model.Agent) error {

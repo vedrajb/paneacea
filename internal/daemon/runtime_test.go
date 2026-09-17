@@ -123,6 +123,70 @@ func TestDetachedTerminalAndRuntimeRestoration(t *testing.T) {
 		t.Fatal("workspace ownership cleanup failed")
 	}
 }
+func TestExitedShellIsRemovedFromPersistedState(t *testing.T) {
+	store := &memoryStore{}
+	r, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	state := invoke(t, r, "workspace.create", Params{Name: "Test", RootDirectory: t.TempDir()}).(*model.State)
+	state = invoke(t, r, "tab.create", Params{WorkspaceID: state.ActiveWorkspaceID, Executable: "cmd.exe", Arguments: []string{"/c", "exit", "0"}}).(*model.State)
+	w := state.Workspace(state.ActiveWorkspaceID)
+	_, tab := state.Tab(w.ActiveTabID)
+	paneID := tab.ActivePaneID
+	tabID := tab.ID
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		state = invoke(t, r, "state.get", nil).(*model.State)
+		if _, exists := state.Panes[paneID]; !exists {
+			if _, remaining := state.Tab(tabID); remaining != nil {
+				t.Fatal("empty tab was retained after its shell exited")
+			}
+			persisted, loadErr := store.Load()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if _, exists = persisted.Panes[paneID]; exists {
+				t.Fatal("exited shell remained in persisted state")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("exited shell was not removed from state")
+}
+func TestPreviouslyExitedShellIsRestored(t *testing.T) {
+	store := &memoryStore{}
+	r, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := invoke(t, r, "workspace.create", Params{Name: "Test", RootDirectory: t.TempDir()}).(*model.State)
+	state = invoke(t, r, "tab.create", Params{WorkspaceID: state.ActiveWorkspaceID, Executable: "powershell.exe", Arguments: []string{"-NoLogo", "-NoProfile"}}).(*model.State)
+	w := state.Workspace(state.ActiveWorkspaceID)
+	_, tab := state.Tab(w.ActiveTabID)
+	paneID := tab.ActivePaneID
+	r.Close()
+	persisted, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted.Panes[paneID].Status = "exited"
+	persisted.Panes[paneID].PID = 0
+	if err = store.Save(persisted); err != nil {
+		t.Fatal(err)
+	}
+	r, err = New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	state = invoke(t, r, "state.get", nil).(*model.State)
+	if state.Panes[paneID] == nil || state.Panes[paneID].Status != "running" || state.Panes[paneID].PID == 0 {
+		t.Fatal("previously exited shell was not restored")
+	}
+}
 func TestSplitPaneWorkingDirectoriesRestore(t *testing.T) {
 	store := &memoryStore{}
 	r, err := New(store)
