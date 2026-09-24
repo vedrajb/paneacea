@@ -14,10 +14,10 @@ Double-click `run.bat` to build and launch, or run `build.bat` to build without 
 .\scripts\build-wails.ps1 -Configuration Release -Run
 ```
 
-The build creates a portable package at `portable-release` with this layout:
+The build creates a portable package at `paneacea-portable` with this layout:
 
 ```text
-portable-release/
+paneacea-portable/
 ├── paneacea.exe
 ├── paneacea-runtime.exe
 ├── paneacea-cli.exe
@@ -26,9 +26,9 @@ portable-release/
 └── pca.cmd
 ```
 
-`config.toml` is seeded with default user settings and is preserved across rebuilds. Launch the packaged app from a terminal with `.\portable-release\pca.cmd`.
+`config.toml` is seeded with default user settings and is preserved across rebuilds. Launch the packaged app from a terminal with `.\paneacea-portable\pca.cmd`.
 
-To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `portable-release.zip`.
+To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `paneacea-portable.zip`.
 
 Or launch the intermediate build:
 

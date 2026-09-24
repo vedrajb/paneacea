@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const MaxMessage = 4 * 1024 * 1024
+const MaxMessage = 8 * 1024 * 1024
 
 type Request struct {
 	ID     string          `json:"id"`
@@ -24,13 +24,15 @@ type Response struct {
 	Error  string          `json:"error,omitempty"`
 }
 type Output struct {
-	Snapshot  bool   `json:"snapshot"`
-	Columns   int    `json:"columns"`
-	Rows      int    `json:"rows"`
-	Data      []byte `json:"data"`
-	Exited    bool   `json:"exited"`
-	Truncated bool   `json:"truncated"`
-	Sequence  uint64 `json:"sequence"`
+	Snapshot       bool   `json:"snapshot"`
+	Restored       bool   `json:"restored"`
+	ViewportOffset int    `json:"viewportOffset"`
+	Columns        int    `json:"columns"`
+	Rows           int    `json:"rows"`
+	Data           []byte `json:"data"`
+	Exited         bool   `json:"exited"`
+	Truncated      bool   `json:"truncated"`
+	Sequence       uint64 `json:"sequence"`
 }
 type Client struct {
 	mu      sync.Mutex
@@ -45,6 +47,13 @@ func Scanner(conn net.Conn) *bufio.Scanner {
 }
 func Connect(ctx context.Context) (*Client, error) {
 	conn, err := Dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{conn: conn, scanner: Scanner(conn)}, nil
+}
+func ConnectLocal(ctx context.Context) (*Client, error) {
+	conn, err := DialLocal(ctx)
 	if err != nil {
 		return nil, err
 	}

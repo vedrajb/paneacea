@@ -6,7 +6,7 @@ param(
 . "$PSScriptRoot\wails-env.ps1"
 . "$PSScriptRoot\stop-wails.ps1"
 Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "build\bin")
-Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "portable-release")
+Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "paneacea-portable")
 Write-Host "Building $Configuration configuration."
 Push-Location frontend
 try {
@@ -30,7 +30,7 @@ if ($Configuration -eq "Release") {
     go build -trimpath -tags desktop -o build/bin/paneacea.exe ./cmd/paneacea
 }
 if ($LASTEXITCODE -ne 0) { throw "Desktop build failed." }
-$portableDirectory = Join-Path $projectDirectory "portable-release"
+$portableDirectory = Join-Path $projectDirectory "paneacea-portable"
 $portableLogsDirectory = Join-Path $portableDirectory "Logs"
 foreach ($directory in @($portableDirectory, $portableLogsDirectory)) {
     if (-not (Test-Path -LiteralPath $directory)) { New-Item -ItemType Directory -Path $directory | Out-Null }
@@ -50,6 +50,6 @@ theme = "dark"
 keybindings = {}
 '@ | Set-Content -LiteralPath $portableConfig -Encoding UTF8
 }
-& (Join-Path $PSScriptRoot "test-portable-package.ps1") -PackageDirectory $portableDirectory
+& (Join-Path $PSScriptRoot "test-portable-package.ps1") -PackageDirectory $portableDirectory -AllowPersistentState
 Write-Host "Built $portableDirectory\pca.cmd"
 if ($Run) { Start-Process -FilePath (Join-Path $portableDirectory "paneacea.exe") -WorkingDirectory $portableDirectory -WindowStyle Normal }

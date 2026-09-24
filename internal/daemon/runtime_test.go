@@ -6,6 +6,8 @@ import (
 	"errors"
 	"github.com/paneacea/paneacea/internal/ipc"
 	"github.com/paneacea/paneacea/internal/model"
+	"github.com/paneacea/paneacea/internal/persistence"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +48,40 @@ func invoke(t *testing.T, r *Runtime, method string, p any) any {
 		t.Fatalf("%s: %v", method, err)
 	}
 	return value
+}
+func TestWorkspacePersistenceWithSQLiteRuntimeRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := persistence.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(store)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	invoke(t, r, "workspace.create", Params{Name: "Project", RootDirectory: root})
+	r.Close()
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = persistence.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err = New(store)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer store.Close()
+	state := invoke(t, r, "state.get", nil).(*model.State)
+	workspace := state.Workspace(state.ActiveWorkspaceID)
+	if workspace == nil || workspace.Name != "Project" || workspace.RootDirectory != root {
+		t.Fatalf("workspace did not survive restart: %#v", workspace)
+	}
 }
 func TestWorkspacePersistenceAndMutationRollback(t *testing.T) {
 	store := &memoryStore{}
@@ -187,6 +223,7 @@ func TestPreviouslyExitedShellIsRestored(t *testing.T) {
 		t.Fatal("previously exited shell was not restored")
 	}
 }
+
 func TestSplitPaneWorkingDirectoriesRestore(t *testing.T) {
 	store := &memoryStore{}
 	r, err := New(store)
@@ -205,26 +242,29 @@ func TestSplitPaneWorkingDirectoriesRestore(t *testing.T) {
 		t.Skip("Git Bash is not installed")
 	}
 	root := t.TempDir()
+	firstOther := t.TempDir()
 	other := t.TempDir()
 	state := invoke(t, r, "workspace.create", Params{Name: "Test", RootDirectory: root}).(*model.State)
-	state = invoke(t, r, "tab.create", Params{WorkspaceID: state.ActiveWorkspaceID, Executable: profile.Executable, Arguments: profile.Arguments}).(*model.State)
+	state = invoke(t, r, "tab.create", Params{WorkspaceID: state.ActiveWorkspaceID, Executable: profile.Executable, Arguments: []string{"--noprofile", "--norc", "-i"}}).(*model.State)
 	w := state.Workspace(state.ActiveWorkspaceID)
 	_, tab := state.Tab(w.ActiveTabID)
 	firstID := tab.ActivePaneID
-	state = invoke(t, r, "pane.split", Params{PaneID: firstID, Orientation: "vertical"}).(*model.State)
+	state = invoke(t, r, "pane.split", Params{PaneID: firstID, Orientation: "vertical", Executable: profile.Executable, Arguments: []string{"--noprofile", "--norc", "-i"}}).(*model.State)
 	_, tab = state.Tab(w.ActiveTabID)
 	secondID := tab.ActivePaneID
+	rootForBash := "/" + strings.ToLower(firstOther[:1]) + strings.ReplaceAll(firstOther[2:], "\\", "/")
 	otherForBash := "/" + strings.ToLower(other[:1]) + strings.ReplaceAll(other[2:], "\\", "/")
+	invoke(t, r, "pane.sendInput", Params{PaneID: firstID, Data: "cd -- '" + rootForBash + "'\r"})
 	invoke(t, r, "pane.sendInput", Params{PaneID: secondID, Data: "cd -- '" + otherForBash + "'\r"})
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		state = invoke(t, r, "state.get", nil).(*model.State)
-		if state.Panes[secondID].CurrentWorkingDirectory == other {
+		if state.Panes[firstID].CurrentWorkingDirectory == firstOther && state.Panes[secondID].CurrentWorkingDirectory == other {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if state.Panes[firstID].CurrentWorkingDirectory != root || state.Panes[secondID].CurrentWorkingDirectory != other {
+	if state.Panes[firstID].CurrentWorkingDirectory != firstOther || state.Panes[secondID].CurrentWorkingDirectory != other {
 		t.Fatalf("working directories were not tracked independently: first=%q second=%q", state.Panes[firstID].CurrentWorkingDirectory, state.Panes[secondID].CurrentWorkingDirectory)
 	}
 	r.Close()
@@ -232,9 +272,13 @@ func TestSplitPaneWorkingDirectoriesRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state = invoke(t, r, "state.get", nil).(*model.State)
+	if state.Panes[firstID].CurrentWorkingDirectory != firstOther || state.Panes[secondID].CurrentWorkingDirectory != other {
+		t.Fatalf("working directories were not persisted: first=%q second=%q", state.Panes[firstID].CurrentWorkingDirectory, state.Panes[secondID].CurrentWorkingDirectory)
+	}
 	invoke(t, r, "pane.sendInput", Params{PaneID: firstID, Data: "pwd -W\r"})
 	invoke(t, r, "pane.sendInput", Params{PaneID: secondID, Data: "pwd -W\r"})
-	rootForBash := strings.ReplaceAll(root, "\\", "/")
+	rootForBash = strings.ReplaceAll(firstOther, "\\", "/")
 	otherForBash = strings.ReplaceAll(other, "\\", "/")
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {

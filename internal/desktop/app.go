@@ -38,7 +38,7 @@ func (a *App) Call(method string, params json.RawMessage) (json.RawMessage, erro
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.client == nil {
-		client, err := ipc.Ensure(a.ctx)
+		client, err := ipc.EnsureLocal(a.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,7 @@ func (a *App) ReadOutput(streamID, id string, sequence uint64) (json.RawMessage,
 	if client == nil {
 		method = "terminal.attach"
 		var err error
-		client, err = ipc.Connect(a.ctx)
+		client, err = ipc.ConnectLocal(a.ctx)
 		if err != nil {
 			a.mu.Unlock()
 			return nil, err

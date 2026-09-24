@@ -5,9 +5,9 @@ target/
 .build-validation/
 .packages/
 .cargo-home/
-/portable-release/
-/portable-release-*/
-/portable-release.zip
+/paneacea-portable/
+/paneacea-portable-*/
+/paneacea-portable.zip
 wails-prototype/
 *.user
 *.log

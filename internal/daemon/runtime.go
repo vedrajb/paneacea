@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"github.com/paneacea/paneacea/internal/agents"
 	"github.com/paneacea/paneacea/internal/ipc"
 	"github.com/paneacea/paneacea/internal/model"
+	"github.com/paneacea/paneacea/internal/persistence"
 	"github.com/paneacea/paneacea/internal/process"
 	"github.com/paneacea/paneacea/internal/terminal"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,19 +28,33 @@ type Storage interface {
 	Load() (*model.State, error)
 	Save(*model.State) error
 }
+type TerminalHistoryStorage interface {
+	SaveTerminalHistory(string, persistence.TerminalHistory) error
+	LoadTerminalHistory(string) (*persistence.TerminalHistory, error)
+	DeleteTerminalHistory(string) error
+	DeleteAllTerminalHistory() error
+	DeleteTerminalHistoryExcept([]string) error
+}
 type Runtime struct {
-	mu             sync.Mutex
-	state          *model.State
-	store          Storage
-	sessions       map[string]*terminal.Session
-	outputs        map[string]*outputBuffer
-	stoppingAgents map[string]bool
-	cancel         context.CancelFunc
-	done           chan struct{}
-	shutting       bool
+	mu                sync.Mutex
+	historyMu         sync.Mutex
+	state             *model.State
+	store             Storage
+	sessions          map[string]*terminal.Session
+	outputs           map[string]*outputBuffer
+	unreadableHistory map[string]bool
+	stoppingAgents    map[string]bool
+	cancel            context.CancelFunc
+	done              chan struct{}
+	historyDone       chan struct{}
+	viewportOffsets   map[string]int
+	shutting          bool
+
+	systemShuttingDown func() bool
 }
 
 const agentStoppedStatus = "agent-stopped"
+
 type Params struct {
 	WorkspaceID   string            `json:"workspaceId"`
 	TabID         string            `json:"tabId"`
@@ -58,6 +75,7 @@ type Params struct {
 	Sequence      uint64            `json:"sequence"`
 	Settings      *model.Settings   `json:"settings"`
 	Agent         *model.Agent      `json:"agent"`
+	Offset        int               `json:"offset"`
 }
 
 func New(store Storage) (*Runtime, error) {
@@ -71,7 +89,21 @@ func New(store Storage) (*Runtime, error) {
 	if state.Settings.DefaultShell.Executable == "" {
 		state.Settings.DefaultShell = firstAvailableProfile()
 	}
-	r := &Runtime{state: state, store: store, sessions: map[string]*terminal.Session{}, outputs: map[string]*outputBuffer{}, stoppingAgents: map[string]bool{}, done: make(chan struct{})}
+	r := &Runtime{state: state, store: store, sessions: map[string]*terminal.Session{}, outputs: map[string]*outputBuffer{}, unreadableHistory: map[string]bool{}, stoppingAgents: map[string]bool{}, done: make(chan struct{}), historyDone: make(chan struct{}), viewportOffsets: map[string]int{}}
+	r.systemShuttingDown = systemShuttingDown
+	if historyStore, ok := store.(TerminalHistoryStorage); ok {
+		paneIDs := make([]string, 0, len(state.Panes))
+		for id := range state.Panes {
+			paneIDs = append(paneIDs, id)
+		}
+		if state.Settings.TerminalHistoryLines == 0 {
+			if err = historyStore.DeleteAllTerminalHistory(); err != nil {
+				log.Printf("clear terminal history while disabled: %v", err)
+			}
+		} else if err = historyStore.DeleteTerminalHistoryExcept(paneIDs); err != nil {
+			log.Printf("prune orphaned terminal history: %v", err)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.mu.Lock()
@@ -92,13 +124,17 @@ func New(store Storage) (*Runtime, error) {
 		return nil, err
 	}
 	go r.monitor(ctx)
+	go r.checkpointLoop(ctx)
 	return r, nil
 }
 func (r *Runtime) Close() {
-	r.cancel()
-	<-r.done
 	r.mu.Lock()
 	r.shutting = true
+	r.mu.Unlock()
+	r.cancel()
+	<-r.done
+	<-r.historyDone
+	r.mu.Lock()
 	sessions := make([]*terminal.Session, 0, len(r.sessions))
 	for _, s := range r.sessions {
 		sessions = append(sessions, s)
@@ -106,6 +142,154 @@ func (r *Runtime) Close() {
 	r.mu.Unlock()
 	for _, s := range sessions {
 		s.Close()
+	}
+	// Sessions drain their final output on close, so the last checkpoint follows session shutdown.
+	r.checkpointHistory(true)
+}
+
+func (r *Runtime) checkpointLoop(ctx context.Context) {
+	defer close(r.historyDone)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.checkpointHistory(false)
+		}
+	}
+}
+
+func (r *Runtime) checkpointHistory(force bool) {
+	historyStore, ok := r.store.(TerminalHistoryStorage)
+	if !ok {
+		return
+	}
+	r.mu.Lock()
+	// Keep pane deletion serialized with checkpoint writes after releasing the runtime lock.
+	r.historyMu.Lock()
+	lines := r.state.Settings.TerminalHistoryLines
+	if lines == 0 {
+		r.unreadableHistory = map[string]bool{}
+	}
+	outputs := make(map[string]*outputBuffer, len(r.outputs))
+	for id, output := range r.outputs {
+		if r.state.Panes[id] != nil && !r.unreadableHistory[id] {
+			outputs[id] = output
+		}
+	}
+	r.mu.Unlock()
+	var failures = map[string]error{}
+	if lines == 0 {
+		if err := historyStore.DeleteAllTerminalHistory(); err != nil {
+			failures[""] = err
+		}
+	} else {
+		for id, output := range outputs {
+			if !force && !output.needsSave() {
+				continue
+			}
+			data, columns, rows, generation, err := output.persistedSnapshot(lines, persistence.MaxTerminalHistoryBytes)
+			if err == nil {
+				err = historyStore.SaveTerminalHistory(id, persistence.TerminalHistory{Version: 1, Columns: columns, Rows: rows, Data: data})
+			}
+			if err != nil {
+				failures[id] = err
+				continue
+			}
+			output.markSaved(generation)
+		}
+	}
+	r.historyMu.Unlock()
+	if len(failures) == 0 {
+		r.clearHistoryWarnings()
+		return
+	}
+	r.mu.Lock()
+	changed := false
+	for id, err := range failures {
+		if id == "" {
+			log.Printf("delete saved terminal history: %v", err)
+			continue
+		}
+		if pane := r.state.Panes[id]; pane != nil {
+			warning := fmt.Sprintf("terminal history save failed: %v", err)
+			if pane.Error != warning {
+				pane.Error = warning
+				changed = true
+			}
+		}
+	}
+	if changed {
+		r.state.Revision++
+		if err := r.store.Save(r.state); err != nil {
+			log.Printf("save terminal history warning state: %v", err)
+		}
+	}
+	r.mu.Unlock()
+}
+
+func (r *Runtime) clearHistoryWarnings() {
+	r.mu.Lock()
+	changed := false
+	for _, pane := range r.state.Panes {
+		if strings.HasPrefix(pane.Error, "terminal history save failed:") {
+			pane.Error = ""
+			changed = true
+		}
+	}
+	if changed {
+		r.state.Revision++
+		if err := r.store.Save(r.state); err != nil {
+			log.Printf("clear terminal history warning state: %v", err)
+		}
+	}
+	r.mu.Unlock()
+}
+
+func (r *Runtime) deleteHistoryLocked(paneID string) {
+	if historyStore, ok := r.store.(TerminalHistoryStorage); ok {
+		r.historyMu.Lock()
+		if err := historyStore.DeleteTerminalHistory(paneID); err != nil {
+			log.Printf("delete terminal history for pane %s: %v", paneID, err)
+		}
+		r.historyMu.Unlock()
+	}
+	delete(r.viewportOffsets, paneID)
+}
+
+func (r *Runtime) applyHistoryLimitLocked() {
+	historyStore, ok := r.store.(TerminalHistoryStorage)
+	if ok {
+		r.historyMu.Lock()
+		defer r.historyMu.Unlock()
+	}
+	if r.state.Settings.TerminalHistoryLines == 0 {
+		r.unreadableHistory = map[string]bool{}
+	}
+	for _, output := range r.outputs {
+		output.applyHistoryLimit(min(max(r.state.Settings.Scrollback, r.state.Settings.TerminalHistoryLines), 25000))
+	}
+	if !ok || r.state.Settings.TerminalHistoryLines == 0 {
+		return
+	}
+	for id, output := range r.outputs {
+		if r.state.Panes[id] == nil || r.unreadableHistory[id] {
+			continue
+		}
+		data, columns, rows, generation, err := output.persistedSnapshot(r.state.Settings.TerminalHistoryLines, persistence.MaxTerminalHistoryBytes)
+		if err == nil {
+			err = historyStore.SaveTerminalHistory(id, persistence.TerminalHistory{Version: 1, Columns: columns, Rows: rows, Data: data})
+		}
+		if err != nil {
+			log.Printf("trim terminal history for pane %s: %v", id, err)
+			if pane := r.state.Panes[id]; pane != nil {
+				pane.Error = fmt.Sprintf("terminal history save failed: %v", err)
+			}
+			continue
+		}
+		output.markSaved(generation)
 	}
 }
 func clone(s *model.State) *model.State {
@@ -140,10 +324,32 @@ func (r *Runtime) launch(p *model.Pane) error {
 	if rows == 0 {
 		rows = 30
 	}
+	historyLines := min(max(r.state.Settings.Scrollback, r.state.Settings.TerminalHistoryLines), 25000)
 	output.emulator = vt.NewEmulator(columns, rows)
 	output.modes = map[ansi.Mode]bool{}
-	output.emulator.SetScrollbackSize(min(r.state.Settings.Scrollback, 2000))
+	output.emulator.SetScrollbackSize(historyLines)
 	output.emulator.SetCallbacks(vt.Callbacks{EnableMode: func(mode ansi.Mode) { output.modes[mode] = true }, DisableMode: func(mode ansi.Mode) { output.modes[mode] = false }})
+	historyWarning := ""
+	if historyStore, ok := r.store.(TerminalHistoryStorage); ok && r.state.Settings.TerminalHistoryLines > 0 {
+		history, loadErr := historyStore.LoadTerminalHistory(p.ID)
+		if loadErr == nil {
+			// Seed the emulator before starting the new shell so its output follows saved history.
+			columns, rows = history.Columns, history.Rows
+			p.Columns, p.Rows = uint16(columns), uint16(rows)
+			output.emulator = vt.NewEmulator(columns, rows)
+			output.emulator.SetScrollbackSize(historyLines)
+			output.emulator.SetCallbacks(vt.Callbacks{EnableMode: func(mode ansi.Mode) { output.modes[mode] = true }, DisableMode: func(mode ansi.Mode) { output.modes[mode] = false }})
+			if restoreErr := output.restore(history.Data); restoreErr != nil {
+				historyWarning = fmt.Sprintf("terminal history could not be restored: %v", restoreErr)
+				r.unreadableHistory[p.ID] = true
+			} else {
+				r.viewportOffsets[p.ID] = output.scrollbackLines()
+			}
+		} else if !errors.Is(loadErr, sql.ErrNoRows) {
+			historyWarning = fmt.Sprintf("terminal history could not be restored: %v", loadErr)
+			r.unreadableHistory[p.ID] = true
+		}
+	}
 	ready := make(chan *terminal.Session, 1)
 	go func() {
 		session := <-ready
@@ -198,44 +404,53 @@ func (r *Runtime) launch(p *model.Pane) error {
 		}
 	}
 	arguments = shellIntegration(executable, arguments, environment)
+	arguments, bashSetup := configureBashStartup(executable, arguments, environment)
+	if bashSetup && environment["HISTFILE"] == "" {
+		if historyStore, ok := r.store.(interface{ BashHistoryPath(string) (string, error) }); ok {
+			historyPath, pathErr := historyStore.BashHistoryPath(p.ID)
+			if pathErr != nil {
+				return pathErr
+			}
+			if pathErr = os.MkdirAll(filepath.Dir(historyPath), 0700); pathErr != nil {
+				return fmt.Errorf("create Bash history directory: %w", pathErr)
+			}
+			environment["HISTFILE"], pathErr = bashHistoryEnvironment(historyPath)
+			if pathErr != nil {
+				return pathErr
+			}
+		}
+	}
 	workingDirectory := p.CurrentWorkingDirectory
 	if _, err = directory(workingDirectory); err != nil {
 		workingDirectory = p.InitialWorkingDirectory
 	}
 	var metadataMu sync.Mutex
 	metadata := ""
+	emitOutput := func(data string) {
+		if data == "" {
+			return
+		}
+		output.append([]byte(data))
+		metadataMu.Lock()
+		metadata += data
+		values, remainder := consumeMetadata(metadata)
+		metadata = remainder
+		for _, value := range values {
+			r.metadata(p.ID, value)
+		}
+		metadataMu.Unlock()
+	}
 	session, err := terminal.NewSession(terminal.Options{Executable: executable, Arguments: arguments, Environment: environment, WorkingDirectory: workingDirectory, Columns: p.Columns, Rows: p.Rows,
 		OnOutput: func(data string) {
-			output.append([]byte(data))
-			metadataMu.Lock()
-			metadata += data
-			for {
-				start := strings.Index(metadata, "\x1b]")
-				if start < 0 {
-					metadata = ""
-					break
-				}
-				metadata = metadata[start:]
-				end := strings.IndexAny(metadata[2:], "\a\x1b")
-				if end < 0 {
-					if len(metadata) > 8192 {
-						metadata = ""
-					}
-					break
-				}
-				end += 2
-				value := metadata[2:end]
-				metadata = metadata[end+1:]
-				r.metadata(p.ID, value)
-			}
-			metadataMu.Unlock()
+			emitOutput(data)
 		},
 		OnExit: func(exitErr error) {
 			_ = output.emulator.InputPipe().(io.Closer).Close()
 			output.exit()
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			if r.shutting || r.outputs[p.ID] != output {
+			// Windows shutdown can end shells before the runtime; preserve their panes for the next startup.
+			if r.shutting || r.outputs[p.ID] != output || r.systemShuttingDown() {
 				return
 			}
 			if r.stoppingAgents[p.ID] {
@@ -245,7 +460,11 @@ func (r *Runtime) launch(p *model.Pane) error {
 			if r.state.Panes[p.ID] != nil {
 				r.removePane(p.ID)
 				r.state.Revision++
-				_ = r.store.Save(r.state)
+				if saveErr := r.store.Save(r.state); saveErr != nil {
+					log.Printf("save terminal exit state: %v", saveErr)
+				} else {
+					r.deleteHistoryLocked(p.ID)
+				}
 			}
 		},
 	})
@@ -265,8 +484,43 @@ func (r *Runtime) launch(p *model.Pane) error {
 	}
 	p.RuntimeTerminalID = p.ID
 	p.Status = "running"
-	p.Error = ""
+	p.Error = historyWarning
 	return nil
+}
+func consumeMetadata(metadata string) (values []string, remainder string) {
+	for {
+		start := strings.Index(metadata, "\x1b]")
+		if start < 0 {
+			if strings.HasSuffix(metadata, "\x1b") {
+				return values, "\x1b"
+			}
+			return values, ""
+		}
+		metadata = metadata[start:]
+		bel := strings.IndexByte(metadata[2:], '\a')
+		st := strings.Index(metadata[2:], "\x1b\\")
+		if bel < 0 && st < 0 {
+			if len(metadata) > 8192 {
+				return values, ""
+			}
+			return values, metadata
+		}
+		end := -1
+		terminatorLength := 0
+		if bel >= 0 && (st < 0 || bel < st) {
+			end = bel + 2
+			terminatorLength = 1
+		} else {
+			end = st + 2
+			terminatorLength = 2
+		}
+		if end+terminatorLength > 8192 {
+			metadata = metadata[end+terminatorLength:]
+			continue
+		}
+		values = append(values, metadata[2:end])
+		metadata = metadata[end+terminatorLength:]
+	}
 }
 func (r *Runtime) metadata(id, value string) {
 	r.mu.Lock()
@@ -325,16 +579,35 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 		if output == nil {
 			return nil, fmt.Errorf("terminal not found")
 		}
-		if method == "terminal.attach" || method == "terminal.requestSnapshot" {
-		return output.snapshot(), nil
+		if method == "terminal.attach" {
+			r.mu.Lock()
+			viewportOffset := r.viewportOffsets[p.PaneID]
+			r.mu.Unlock()
+			return output.attachSnapshot(viewportOffset), nil
+		}
+		if method == "terminal.requestSnapshot" {
+			return r.withViewport(p.PaneID, output.snapshot()), nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		value, err := output.read(ctx, p.Sequence)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return ipc.Output{Sequence: p.Sequence}, nil
+			return r.withViewport(p.PaneID, ipc.Output{Sequence: p.Sequence}), nil
 		}
-		return value, err
+		return r.withViewport(p.PaneID, value), err
+	}
+	if method == "terminal.viewport.set" {
+		if p.Offset < 0 {
+			return nil, fmt.Errorf("viewport offset cannot be negative")
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		output := r.outputs[p.PaneID]
+		if output == nil {
+			return nil, fmt.Errorf("terminal not found")
+		}
+		r.viewportOffsets[p.PaneID] = min(p.Offset, output.scrollbackLines())
+		return struct{}{}, nil
 	}
 	if method == "terminal.detach" {
 		return struct{}{}, nil
@@ -419,6 +692,30 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 		r.rollback(before, oldSessions)
 		r.outputs = oldOutputs
 		return nil, fmt.Errorf("persist state: %w", err)
+	}
+	for id := range before.Panes {
+		if r.state.Panes[id] == nil {
+			r.deleteHistoryLocked(id)
+		}
+	}
+	if before.Settings.TerminalHistoryLines != r.state.Settings.TerminalHistoryLines || before.Settings.Scrollback != r.state.Settings.Scrollback {
+		if r.state.Settings.TerminalHistoryLines == 0 {
+			for _, output := range r.outputs {
+				output.applyHistoryLimit(min(r.state.Settings.Scrollback, 25000))
+			}
+			if historyStore, ok := r.store.(TerminalHistoryStorage); ok {
+				r.historyMu.Lock()
+				if err := historyStore.DeleteAllTerminalHistory(); err != nil {
+					log.Printf("clear saved terminal history: %v", err)
+					for _, pane := range r.state.Panes {
+						pane.Error = fmt.Sprintf("terminal history could not be cleared: %v", err)
+					}
+				}
+				r.historyMu.Unlock()
+			}
+		} else {
+			r.applyHistoryLimitLocked()
+		}
 	}
 	for id, s := range oldSessions {
 		if r.state.Panes[id] == nil || r.sessions[id] != s {
@@ -572,6 +869,23 @@ func (r *Runtime) newPane(w *model.Workspace, t *model.Tab, p Params) (*model.Pa
 	r.state.Panes[pane.ID] = pane
 	return pane, nil
 }
+
+func (r *Runtime) withViewport(paneID string, output ipc.Output) ipc.Output {
+	r.mu.Lock()
+	output.ViewportOffset = r.viewportOffsets[paneID]
+	r.mu.Unlock()
+	return output
+}
+
+func validTerminalHistoryLines(lines int) bool {
+	switch lines {
+	case 0, 500, 2000, 5000, 10000, 25000:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *Runtime) mutate(method string, p Params) error {
 	w := r.state.Workspace(p.WorkspaceID)
 	_, t := r.state.Tab(p.TabID)
@@ -751,6 +1065,9 @@ func (r *Runtime) mutate(method string, p Params) error {
 		if p.Settings.DefaultShell.Executable == "" {
 			return fmt.Errorf("default shell required")
 		}
+		if !validTerminalHistoryLines(p.Settings.TerminalHistoryLines) {
+			return fmt.Errorf("terminal history lines must be 0, 500, 2000, 5000, 10000, or 25000")
+		}
 		r.state.Settings = *p.Settings
 	default:
 		return fmt.Errorf("unknown method %q", method)
@@ -781,6 +1098,8 @@ func (r *Runtime) removePane(id string) {
 	}
 	delete(r.state.Panes, id)
 	delete(r.sessions, id)
+	delete(r.unreadableHistory, id)
+	delete(r.viewportOffsets, id)
 	w, tab := r.state.Tab(pane.TabID)
 	if tab == nil {
 		return

@@ -239,6 +239,7 @@
     if (!state) return;
     profiles = await call<Profile[]>("profiles.list");
     draft = JSON.parse(JSON.stringify(state.settings));
+    draft.terminalHistoryLines ??= 2000;
     bindings = JSON.stringify(draft.keybindings ?? {}, null, 2);
     settingsOpen = true;
   }
@@ -970,6 +971,15 @@
           max="100000"
           bind:value={draft.scrollback}
         /></label
+      ><label
+        >Saved terminal history<select bind:value={draft.terminalHistoryLines}
+          ><option value={0}>Off</option><option value={500}>500 lines</option
+          ><option value={2000}>2,000 lines</option><option value={5000}
+            >5,000 lines</option
+          ><option value={10000}>10,000 lines</option><option value={25000}
+            >25,000 lines</option
+          ></select
+        ></label
       ><label
         >Custom keybindings<textarea
           rows="7"

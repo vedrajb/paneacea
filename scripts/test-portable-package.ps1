@@ -1,5 +1,31 @@
-param([Parameter(Mandatory = $true)][string]$PackageDirectory)
+param(
+    [Parameter(Mandatory = $true)][string]$PackageDirectory,
+    [switch]$AllowPersistentState
+)
 $ErrorActionPreference = "Stop"
+
+$packageScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\package.bat") -Raw
+foreach ($expected in @('set "PACKAGE_DIRECTORY=%~dp0paneacea-portable"', 'set "ARCHIVE_PATH=%~dp0paneacea-portable.zip"')) {
+    if (-not $packageScript.Contains($expected)) { throw "package.bat does not target $expected." }
+}
+$buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot "build-wails.ps1") -Raw
+if (-not $buildScript.Contains('paneacea-portable')) { throw "build-wails.ps1 does not target paneacea-portable." }
+$removalIndex = $packageScript.IndexOf("Remove-Item")
+if ($removalIndex -lt 0) { throw "package.bat does not contain the portable package removal command." }
+$packageProtection = $packageScript.Substring(0, $removalIndex)
+foreach ($name in @("paneacea.db", "paneacea.db-wal", "paneacea.db-shm")) {
+    if ($packageProtection -notmatch [regex]::Escape($name)) { throw "package.bat does not check $name before removal." }
+}
+if ($packageProtection -notmatch 'Test-Path -LiteralPath \$path' -or $packageProtection -notmatch 'Refusing to remove portable package' -or $packageProtection -notmatch 'exit /b %EXIT_CODE%') {
+    throw "package.bat does not have a refusal path for persistent portable state."
+}
+
+if (-not $AllowPersistentState) {
+    foreach ($name in @("paneacea.db", "paneacea.db-wal", "paneacea.db-shm")) {
+        $path = Join-Path $PackageDirectory $name
+        if (Test-Path -LiteralPath $path) { throw "Portable package contains persistent state: $path" }
+    }
+}
 
 foreach ($directory in @("Logs")) {
     $path = Join-Path $PackageDirectory $directory

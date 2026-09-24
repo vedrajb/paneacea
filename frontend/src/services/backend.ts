@@ -52,6 +52,7 @@ export type Profile = {
 export type Settings = {
   defaultShell: Profile;
   scrollback: number;
+  terminalHistoryLines: number;
   fontSize: number;
   theme: string;
   keybindings: Record<string, string>;
@@ -69,6 +70,8 @@ export type Output = {
   exited: boolean;
   truncated: boolean;
   snapshot: boolean;
+  restored: boolean;
+  viewportOffset: number;
   columns: number;
   rows: number;
 };

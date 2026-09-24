@@ -71,11 +71,12 @@ type Profile struct {
 	Available  bool     `json:"available"`
 }
 type Settings struct {
-	DefaultShell Profile           `json:"defaultShell"`
-	Scrollback   int               `json:"scrollback"`
-	FontSize     int               `json:"fontSize"`
-	Theme        string            `json:"theme"`
-	Keybindings  map[string]string `json:"keybindings"`
+	DefaultShell         Profile           `json:"defaultShell"`
+	Scrollback           int               `json:"scrollback"`
+	TerminalHistoryLines int               `json:"terminalHistoryLines"`
+	FontSize             int               `json:"fontSize"`
+	Theme                string            `json:"theme"`
+	Keybindings          map[string]string `json:"keybindings"`
 }
 type State struct {
 	Version           int              `json:"version"`
@@ -87,7 +88,7 @@ type State struct {
 }
 
 func NewState() *State {
-	return &State{Version: 1, Workspaces: []*Workspace{}, Panes: map[string]*Pane{}, Settings: Settings{Scrollback: 10000, FontSize: 13, Theme: "dark", Keybindings: map[string]string{}}}
+	return &State{Version: 1, Workspaces: []*Workspace{}, Panes: map[string]*Pane{}, Settings: Settings{Scrollback: 10000, TerminalHistoryLines: 2000, FontSize: 13, Theme: "dark", Keybindings: map[string]string{}}}
 }
 func ID() string {
 	b := make([]byte, 16)

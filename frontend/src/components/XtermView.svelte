@@ -21,7 +21,10 @@
   $: if (terminal && active) terminal.focus();
   $: if (terminal) {
     terminal.options.fontSize = settings.fontSize;
-    terminal.options.scrollback = settings.scrollback;
+    terminal.options.scrollback = Math.max(
+      settings.scrollback,
+      settings.terminalHistoryLines,
+    );
     fitTerminal();
   }
   onMount(() => {
@@ -32,7 +35,7 @@
       queued = 0;
     let input = Promise.resolve();
     terminal = new Terminal({
-      scrollback: settings.scrollback,
+      scrollback: Math.max(settings.scrollback, settings.terminalHistoryLines),
       fontSize: settings.fontSize,
       fontFamily: '"Cascadia Mono",Consolas,monospace',
       fontWeight: "400",
@@ -144,6 +147,8 @@
         });
     });
     let timer: ReturnType<typeof setTimeout>;
+    let viewportSaveTimer: ReturnType<typeof setTimeout>;
+    let viewportOffset = -1;
     let columns = 0,
       rows = 0;
     function resize() {
@@ -162,6 +167,17 @@
       }, 60);
     }
     const observer = new ResizeObserver(resize);
+    const scroll = terminal.onScroll((viewportY) => {
+      clearTimeout(viewportSaveTimer);
+      viewportSaveTimer = setTimeout(() => {
+        const offset = Math.max(0, terminal.buffer.active.baseY - viewportY);
+        if (offset === viewportOffset || disposed) return;
+        viewportOffset = offset;
+        void call("terminal.viewport.set", { paneId: id, offset }).catch((e) =>
+          error(String(e)),
+        );
+      }, 80);
+    });
     fitTerminal = resize;
     window.addEventListener("resize", resize);
     const focusTerminal = () => {
@@ -191,6 +207,14 @@
             await write(bytes(output.data));
             host.dataset.outputSequence = String(sequence);
           }
+          if (output.snapshot) {
+            const offset = output.restored
+              ? terminal.buffer.active.baseY
+              : output.viewportOffset;
+            viewportOffset = offset;
+            // Restored history opens at its oldest line; same-runtime attaches keep the pane offset.
+            terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
+          }
           if (output.snapshot) resize();
           if (output.exited) {
             await write(
@@ -207,12 +231,14 @@
     return () => {
       disposed = true;
       clearTimeout(timer);
+      clearTimeout(viewportSaveTimer);
       fitTerminal = () => {};
       host.removeEventListener("paneacea-focus", focusTerminal);
       host.removeEventListener("wheel", wheel, true);
       window.removeEventListener("resize", resize);
       observer.disconnect();
       data.dispose();
+      scroll.dispose();
       queryHandlers.forEach((handler) => handler.dispose());
       disposeWebgl();
       terminal.dispose();

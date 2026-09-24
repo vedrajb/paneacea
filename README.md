@@ -59,7 +59,7 @@ To recreate the portable package from scratch and create a zip archive, run:
 .\package.bat
 ```
 
-This recreates `portable-release` and writes `portable-release.zip`.
+This recreates `paneacea-portable` and writes `paneacea-portable.zip`.
 
 The PowerShell build script can also be run directly. Omit `-Run` to build without launching:
 
@@ -68,10 +68,10 @@ The PowerShell build script can also be run directly. Omit `-Run` to build witho
 .\scripts\build-wails.ps1 -Configuration Release -Run
 ```
 
-The build writes intermediate executables to `build\bin` and creates the portable package at `portable-release`:
+The build writes intermediate executables to `build\bin` and creates the portable package at `paneacea-portable`:
 
 ```text
-portable-release/
+paneacea-portable/
 ├── paneacea.exe
 ├── paneacea-runtime.exe
 ├── paneacea-cli.exe
@@ -83,7 +83,7 @@ portable-release/
 `config.toml` is seeded with default user settings and is preserved when the package is rebuilt. Launch the packaged app from a terminal with:
 
 ```powershell
-.\portable-release\pca.cmd
+.\paneacea-portable\pca.cmd
 ```
 
 The build regenerates the executable and taskbar icon from `icons\paneacea-app-icon.svg`. Use `build-wails.ps1` when building the desktop application; a direct `go build` uses the most recently generated Windows icon resource.
@@ -104,7 +104,7 @@ Keep all three executables in the same directory. A separately installed Wails C
 
 ## Usage
 
-After launch, create a workspace, choose its root folder, and open a terminal tab. The first launch detects Git Bash, PowerShell 7, Windows PowerShell, and Command Prompt. The collapsed left rail opens the workspace selector, creates workspaces, and provides Settings. Use Settings to choose the default shell, font size, scrollback, appearance, and custom keybindings. Reuse `frontend/src/theme.css` as the color-token template for additional themes.
+After launch, create a workspace, choose its root folder, and open a terminal tab. The first launch detects Git Bash, PowerShell 7, Windows PowerShell, and Command Prompt. The collapsed left rail opens the workspace selector, creates workspaces, and provides Settings. Use Settings to choose the default shell, font size, in-memory scrollback, saved terminal history, appearance, and custom keybindings. Reuse `frontend/src/theme.css` as the color-token template for additional themes.
 
 Press `Ctrl+B` to open the centered workspace selector. Use Up/Down to choose a workspace, Enter to switch, or Escape to cancel.
 
@@ -153,7 +153,7 @@ $env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'
 .\build\bin\paneacea.exe
 ```
 
-The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A normal shell exit closes its pane and removes its saved record, so only active shell panes are restored after a runtime restart. Restored panes use their saved workspace, tab, pane, and launch configuration to start fresh shell processes.
+The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A normal shell exit closes its pane and removes its saved record, so only active shell panes are restored after a runtime restart. Shell exits during Windows shutdown or reboot preserve their panes and saved layout. Restored panes use their saved workspace, tab, pane, and launch configuration to start fresh shell processes. Terminal output history is encrypted for the current Windows user, checkpointed every two seconds, and restored before the new shell starts. Settings controls the saved line limit; Off deletes saved history. Git Bash panes save separate command recall files in the data directory's `bash-history` folder. These Bash files are plaintext, unlike encrypted terminal output snapshots. Abrupt shutdown may lose output since the last successful checkpoint, and output from before this feature was added cannot be recovered.
 
 Closing the Paneacea window stops active registered agent panes while leaving ordinary terminal panes running. Starting Paneacea again relaunches those agent sessions from their captured session IDs and waits for the next prompt.
 
