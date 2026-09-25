@@ -7,6 +7,7 @@ import (
 	"github.com/paneacea/paneacea/internal/ipc"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"sync"
+	"time"
 )
 
 type App struct {
@@ -17,9 +18,18 @@ type App struct {
 }
 
 func New() *App { return &App{streams: map[string]*ipc.Client{}} }
+
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	_, _ = a.Call("agent.restore", nil)
+}
+func (a *App) DomReady(ctx context.Context) {
+	wailsruntime.WindowShow(ctx)
+	found := focusWebView()
+	for attempt := 0; !found && attempt < 20; attempt++ {
+		time.Sleep(100 * time.Millisecond)
+		found = focusWebView()
+	}
 }
 func (a *App) Shutdown(context.Context) {
 	a.mu.Lock()

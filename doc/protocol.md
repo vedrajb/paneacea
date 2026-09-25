@@ -66,7 +66,7 @@ Pane layout, launch configuration, current working directory, terminal dimension
 
 Interactive PowerShell and Git Bash sessions emit OSC 7 working-directory notifications through temporary runtime-provided prompt integration. The runtime validates local paths and falls back to the last saved directory when integration is unavailable.
 
-When the runtime restarts, it restores the saved terminal snapshot and then launches a new shell in the saved directory. Shell variables, running jobs, and live full-screen application processes are not resumed. Alternate-screen application content is not restored; the primary scrollback is retained. The first attach after runtime restart opens at the top of saved history. A clean shutdown flushes history, while abrupt termination may lose output since the last successful checkpoint.
+When the runtime restarts, it restores the saved terminal snapshot and then launches a new shell in the saved directory. Shell variables, running jobs, and live full-screen application processes are not resumed. Alternate-screen application content is not restored; the primary scrollback is retained. The first attach after runtime restart opens at the bottom of saved history. A clean shutdown flushes history, while abrupt termination may lose output since the last successful checkpoint.
 
 Example with PowerShell-generated JSON:
 

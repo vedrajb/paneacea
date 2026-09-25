@@ -55,7 +55,7 @@ On runtime startup:
 3. Launch a new shell in the saved working directory.
 4. Return the restored snapshot when the GUI attaches.
 
-The GUI opens restored panes at the top of their saved terminal history. Scroll position is a live terminal concern and is not restored after a runtime restart.
+The GUI opens restored panes at the bottom of their saved terminal history. Scroll position is a live terminal concern and is not restored after a runtime restart.
 
 ## Working-directory tracking
 
@@ -86,7 +86,7 @@ Add coverage for:
 - DPAPI round trips and corrupt or wrong-user data
 - Fragmented OSC 7 parsing and path validation
 - History surviving ordinary state saves and being deleted with panes, tabs, or workspaces
-- Runtime restart restoring history and launching a new shell at the top of the restored history
+- Runtime restart restoring history and launching a new shell at the bottom of the restored history
 - GUI attach preserving the current live viewport independently for every pane
 
 Update the README and protocol documentation to describe the persistence guarantees and the fact that shell processes themselves are relaunched.
@@ -137,8 +137,8 @@ Files: `internal/ipc/protocol.go`, `internal/desktop/app.go`, `frontend/src/serv
 
 - Add restoration metadata and set the IPC message limit to accommodate a 2 MiB history snapshot encoded as base64. Keep snapshot delivery and subsequent output sequences consistent to prevent duplicate or missing output.
 - Add the saved-history choices from this plan to Settings. Ensure the effective frontend scrollback capacity can display the selected restored history.
-- Populate history before applying the restored viewport. Open a restored pane at the top once; ordinary output updates must not repeatedly jump the user's scroll position.
-- Preserve per-pane viewport positions across GUI detach/reattach within the same runtime. Start with the specified top-of-history behavior after a runtime restart.
+- Populate history before applying the restored viewport. Open a restored pane at the bottom once; ordinary output updates must not repeatedly jump the user's scroll position.
+- Preserve per-pane viewport positions across GUI detach/reattach within the same runtime. Start with the specified bottom-of-history behavior after a runtime restart.
 - Update `doc/protocol.md` to match the implemented request/response flow and label any remaining planned behavior clearly.
 
 ### 6. Validate and document the guarantees

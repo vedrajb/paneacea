@@ -208,11 +208,9 @@
             host.dataset.outputSequence = String(sequence);
           }
           if (output.snapshot) {
-            const offset = output.restored
-              ? terminal.buffer.active.baseY
-              : output.viewportOffset;
+            const offset = output.restored ? 0 : output.viewportOffset;
             viewportOffset = offset;
-            // Restored history opens at its oldest line; same-runtime attaches keep the pane offset.
+            // Restored history opens at its newest line; same-runtime attaches keep the pane offset.
             terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));
           }
           if (output.snapshot) resize();

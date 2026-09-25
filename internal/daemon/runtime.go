@@ -343,7 +343,7 @@ func (r *Runtime) launch(p *model.Pane) error {
 				historyWarning = fmt.Sprintf("terminal history could not be restored: %v", restoreErr)
 				r.unreadableHistory[p.ID] = true
 			} else {
-				r.viewportOffsets[p.ID] = output.scrollbackLines()
+				r.viewportOffsets[p.ID] = 0
 			}
 		} else if !errors.Is(loadErr, sql.ErrNoRows) {
 			historyWarning = fmt.Sprintf("terminal history could not be restored: %v", loadErr)
