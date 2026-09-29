@@ -21,3 +21,4 @@ wails-prototype/
 /cmd/paneacea/paneacea_windows_amd64.syso
 
 node_modules
+.trash

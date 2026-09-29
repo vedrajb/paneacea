@@ -56,6 +56,7 @@ export type Settings = {
   fontSize: number;
   theme: string;
   keybindings: Record<string, string>;
+  hideStartupSplash?: boolean;
 };
 export type State = {
   revision: number;

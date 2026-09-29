@@ -16,8 +16,10 @@ test.beforeEach(async ({ page }) => {
         defaultShell: profile,
         fontSize: 13,
         scrollback: 10000,
+        terminalHistoryLines: 2000,
         theme: "dark",
         keybindings: {},
+        hideStartupSplash: !window.location.search.includes("startupSplash"),
       },
       workspaces: [
         {
@@ -201,6 +203,7 @@ test.beforeEach(async ({ page }) => {
             id: string,
             sequence: number,
           ) => {
+            calls.push({ method: "terminal.read", id, sequence });
             if (window.location.search.includes("terminalDisconnected"))
               throw new Error("runtime unavailable");
             if (!streams.has(streamID)) {
@@ -232,7 +235,7 @@ test.beforeEach(async ({ page }) => {
                 `\x1b[2m│${directoryStart}\x1b[22m${directoryValue}\x1b[2m${" ".repeat(68 - directoryStart.length - directoryValue.length)}│\x1b[22m`,
                 `\x1b[2m╰${"─".repeat(68)}╯\x1b[22m`,
               ].join("\r\n");
-              return {
+              const snapshotOutput: any = {
                 data: btoa(
                   String.fromCharCode(
                     ...new TextEncoder().encode(
@@ -244,9 +247,16 @@ test.beforeEach(async ({ page }) => {
                 exited: false,
                 truncated: false,
                 snapshot: true,
+                restored: false,
+                viewportOffset: 0,
                 columns: 100,
                 rows: 25,
               };
+              if (window.location.search.includes("snapshotWithoutViewport")) {
+                delete snapshotOutput.restored;
+                delete snapshotOutput.viewportOffset;
+              }
+              return snapshotOutput;
             }
             await new Promise((r) => setTimeout(r, 10000));
             return {
@@ -255,6 +265,8 @@ test.beforeEach(async ({ page }) => {
               exited: false,
               truncated: false,
               snapshot: false,
+              restored: false,
+              viewportOffset: 0,
               columns: 0,
               rows: 0,
             };
@@ -361,7 +373,8 @@ test("renders terminal, splits, resizes, and renames a tab", async ({
   await page.goto("/");
   await expect(page.getByRole("tab", { name: "Tab 01" })).toBeVisible();
   await expect(page.locator(".xterm")).toHaveCount(1);
-  await page.getByTitle("Split right", { exact: true }).click();
+  await page.locator(".xterm-helper-textarea").focus();
+  await page.keyboard.press("Alt+Shift+=");
   await expect(page.locator(".xterm")).toHaveCount(2);
   const splitter = page.getByRole("slider");
   await splitter.focus();
@@ -575,7 +588,7 @@ test("terminal shortcuts work once and modal focus stays usable", async ({
   await expect(
     page.getByRole("heading", { name: "Settings", exact: true }),
   ).toHaveCount(0);
-  await page.getByTitle("Command palette", { exact: true }).click();
+  await page.getByRole("button", { name: /^Search commands/ }).click();
   await page.getByLabel("Search commands", { exact: true }).fill("rename tab");
   await expect(
     page.getByRole("button", { name: "Terminal: Rename Tab" }),
@@ -586,7 +599,7 @@ test("navigates, runs, and dismisses the command palette with the keyboard", asy
   page,
 }) => {
   await page.goto("/");
-  await page.getByTitle("Command palette", { exact: true }).click();
+  await page.getByRole("button", { name: /^Search commands/ }).click();
   const palette = page.getByRole("dialog", { name: "Command palette" });
   const commands = palette.locator(".command-list button");
   await expect(commands.nth(0)).toHaveClass(/active/);
@@ -606,7 +619,7 @@ test("navigates, runs, and dismisses the command palette with the keyboard", asy
       ),
     )
     .toBe(1);
-  await page.getByTitle("Command palette", { exact: true }).click();
+  await page.getByRole("button", { name: /^Search commands/ }).click();
   await page.keyboard.press("Escape");
   await expect(palette).toHaveCount(0);
 });
@@ -629,7 +642,8 @@ test("keeps the clicked pane active when a stale refresh arrives", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByTitle("Split right", { exact: true }).click();
+  await page.locator(".xterm-helper-textarea").focus();
+  await page.keyboard.press("Alt+Shift+=");
   const panes = page.locator(".pane");
   await expect(panes).toHaveCount(2);
   await page.evaluate(() => {
@@ -675,7 +689,7 @@ test("uses a compact rounded terminal scrollbar", async ({ page }) => {
     ".xterm-scrollable-element > .scrollbar.vertical > .slider",
   );
   await expect(slider).toHaveCSS("width", "4px");
-  await expect(slider).toHaveCSS("border-top-left-radius", "3px");
+  await expect(slider).toHaveCSS("border-top-left-radius", "0px");
 });
 
 test("uses a collapsed workspace rail with bottom-pinned Settings", async ({
@@ -763,6 +777,19 @@ test("copies terminal selections with Ctrl+C and pastes with Ctrl+V", async ({
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const terminalInput = page.locator(".xterm-helper-textarea");
   const screen = page.locator(".xterm-screen");
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-output-sequence",
+    "100",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).testCalls.some(
+          (entry: any) => entry.method === "terminal.resize",
+        ),
+      ),
+    )
+    .toBe(true);
   await terminalInput.focus();
   const box = await screen.boundingBox();
   expect(box).not.toBeNull();
@@ -947,4 +974,64 @@ test("focus shortcut returns from settings and shortcut help lists current bindi
       ),
     )
     .toBe(1);
+});
+
+test("startup splash shows shortcuts and can be disabled and reopened", async ({
+  page,
+}) => {
+  await page.goto("/?startupSplash");
+  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(help).toBeVisible();
+  const toggle = help.getByLabel("Do not show on startup");
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).testCalls
+            .filter((entry: any) => entry.method === "settings.set")
+            .at(-1)?.params.settings.hideStartupSplash,
+      ),
+    )
+    .toBe(true);
+  await help.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(help).toHaveCount(0);
+  await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+  await expect(help).toBeVisible();
+  await expect(help.getByLabel("Do not show on startup")).toBeChecked();
+});
+
+test("startup splash stays hidden when disabled in settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("tab", { name: "Tab 01" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Keyboard shortcuts" }),
+  ).toHaveCount(0);
+});
+
+test("renders a snapshot without viewport fields without disconnecting", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/?snapshotWithoutViewport");
+  await expect(page.locator(".xterm-host")).toHaveAttribute(
+    "data-output-sequence",
+    "100",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).testCalls.filter(
+            (entry: any) =>
+              entry.method === "terminal.read" && entry.sequence === 100,
+          ).length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  expect(errors).toEqual([]);
 });

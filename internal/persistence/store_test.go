@@ -32,3 +32,32 @@ func TestStateSurvivesStoreReopen(t *testing.T) {
 		t.Fatal("state did not survive reopen")
 	}
 }
+
+func TestHideStartupSplashSurvivesStoreReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := model.NewState()
+	if state.Settings.HideStartupSplash {
+		t.Fatal("startup splash should be shown by default")
+	}
+	state.Settings.HideStartupSplash = true
+	if err = store.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Settings.HideStartupSplash {
+		t.Fatal("hideStartupSplash did not survive reopen")
+	}
+}

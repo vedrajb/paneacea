@@ -155,6 +155,16 @@ kbd {
   align-items: center;
   align-self: stretch;
 }
+.help-button {
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  margin-right: 12px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+}
 .runtime-status {
   width: 23px;
   height: 23px;

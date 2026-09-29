@@ -14,6 +14,10 @@
   import PaneTree from "./components/PaneTree.svelte";
   import ShortcutHelp from "./components/ShortcutHelp.svelte";
   import {
+    shouldShowStartupSplash,
+    withStartupSplash,
+  } from "./services/startupSplash";
+  import {
     bridge,
     call,
     type State,
@@ -71,6 +75,7 @@
   let draggedTab = "";
   let generation = 0;
   let shortcutsOpen = false;
+  let startupSplashChecked = false;
   let fontChanges: Promise<void> = Promise.resolve();
   let startupFocusPending = true;
   let focusGeneration = 0;
@@ -120,6 +125,10 @@
   }
   function apply(next: State) {
     if (!state || next.revision > state.revision) state = next;
+    if (!startupSplashChecked) {
+      startupSplashChecked = true;
+      if (shouldShowStartupSplash(state.settings)) shortcutsOpen = true;
+    }
     connected = true;
     runtimeRestartToast = false;
     clearTimeout(runtimeRestartTimer);
@@ -679,6 +688,13 @@
       on:click={() => execute("Paneacea.CommandPalette")}
       >Search commands <kbd>Ctrl Shift P</kbd></button
     ><div class="titlebar-actions">
+      <button
+        class="help-button"
+        title="Keyboard shortcuts"
+        aria-label="Keyboard shortcuts"
+        on:click|stopPropagation={() => execute("Help.ShowShortcuts")}
+        >?</button
+      >
       <img
         class="runtime-status"
         src={connected ? runtimeConnectedIconUrl : runtimeDisconnectedIconUrl}
@@ -858,6 +874,13 @@
   <ShortcutHelp
     overrides={state?.settings.keybindings ?? {}}
     close={() => (shortcutsOpen = false)}
+    hideOnStartup={state?.settings.hideStartupSplash ?? false}
+    setHideOnStartup={(hide) => {
+      if (state)
+        perform("settings.set", {
+          settings: withStartupSplash(state.settings, !hide),
+        });
+    }}
   />
 {/if}
 {#if palette}<div

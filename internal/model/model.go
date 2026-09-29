@@ -77,6 +77,7 @@ type Settings struct {
 	FontSize             int               `json:"fontSize"`
 	Theme                string            `json:"theme"`
 	Keybindings          map[string]string `json:"keybindings"`
+	HideStartupSplash    bool              `json:"hideStartupSplash"`
 }
 type State struct {
 	Version           int              `json:"version"`

@@ -208,7 +208,7 @@
             host.dataset.outputSequence = String(sequence);
           }
           if (output.snapshot) {
-            const offset = output.restored ? 0 : output.viewportOffset;
+            const offset = output.restored ? 0 : (output.viewportOffset ?? 0);
             viewportOffset = offset;
             // Restored history opens at its newest line; same-runtime attaches keep the pane offset.
             terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - offset));

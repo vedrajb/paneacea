@@ -4,6 +4,8 @@
 
   export let overrides: Record<string, string>;
   export let close: () => void;
+  export let hideOnStartup = false;
+  export let setHideOnStartup: (hide: boolean) => void = () => {};
   let panel: HTMLDivElement;
   $: shortcuts = Object.entries({ ...defaults, ...overrides }).filter(
     ([, action]) =>
@@ -55,6 +57,14 @@
       Ctrl+= and Ctrl+- change terminal font size. Ctrl+Shift+/ is Ctrl+?.
     </p>
     <div class="dialog-actions">
+      <label class="startup-toggle">
+        <input
+          type="checkbox"
+          checked={hideOnStartup}
+          on:change={(event) => setHideOnStartup(event.currentTarget.checked)}
+        />
+        Do not show on startup
+      </label>
       <button class="primary" on:click={close}>Close</button>
     </div>
   </div>
@@ -78,6 +88,14 @@
   }
   td:first-child {
     white-space: nowrap;
+  }
+  .startup-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: auto;
+    font-size: 12px;
+    color: var(--muted-foreground);
   }
   p {
     font-size: 12px;
