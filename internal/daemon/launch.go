@@ -43,7 +43,7 @@ func shellIntegration(executable string, arguments []string, environment map[str
 		}
 	}
 	if name == "powershell.exe" || name == "pwsh.exe" {
-		script := `$global:PaneaceaOriginalPrompt = $function:prompt; function global:prompt { $p = (Get-Location).ProviderPath; if ($p) { [Console]::Write(([char]27).ToString() + ']7;' + ([Uri]$p).AbsoluteUri + [char]7) }; if ($global:PaneaceaOriginalPrompt) { & $global:PaneaceaOriginalPrompt } else { 'PS ' + $p + '> ' } }`
+		script := `$global:PaneaceaOriginalPrompt = $function:prompt; function global:prompt { $h = Get-History -Count 1; [Console]::Write(([char]27).ToString() + ']1999;paneacea;command=' + $(if ($h) { $h.Id } else { 0 }) + [char]7); $p = (Get-Location).ProviderPath; if ($p) { [Console]::Write(([char]27).ToString() + ']7;' + ([Uri]$p).AbsoluteUri + [char]7) }; if ($global:PaneaceaOriginalPrompt) { & $global:PaneaceaOriginalPrompt } else { 'PS ' + $p + '> ' } }`
 		units := utf16.Encode([]rune(script))
 		data := make([]byte, len(units)*2)
 		for i, v := range units {

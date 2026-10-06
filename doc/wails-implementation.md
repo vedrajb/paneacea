@@ -63,7 +63,7 @@ The Go runtime owns ConPTY, terminal screen emulation, process monitoring, and p
 
 The named pipe is scoped to the current Windows user's SID and grants access only to that user. It uses an independent Go protocol, separate from the legacy Rust protocol. Requests are newline-delimited JSON with `id`, `method`, and `params`; responses contain `id`, `ok`, and `result` or `error`. Output data is base64 and carries a sequence number. Initial attachment returns a screen snapshot and subsequent reads continue from that sequence. Client connection closure detaches without terminating the terminal.
 
-Implemented methods: `state.get`, `profiles.list`, `workspace.list/create/rename/setRoot/switch/close`, `tab.create/rename/focus/move/close`, `pane.create/split/focus/resize/close/restart/sendInput`, `terminal.attach/detach/read/resize/requestSnapshot`, `settings.set`, `agent.list/get/status/register/resume`, and the desktop lifecycle methods `agent.stop` and `agent.restore`.
+Implemented methods: `state.get`, `profiles.list`, `workspace.list/create/rename/setRoot/switch/close`, `tab.create/rename/focus/move/close`, `pane.create/split/focus/resize/close/restart/sendInput`, `terminal.attach/detach/read/resize/requestSnapshot`, `settings.set`, `agent.list/get/status/register`, and the desktop lifecycle method `agent.stop`.
 
 Workspace/tab/pane updates are synchronized through persisted state revisions. The GUI checks state every 1.5 seconds; terminal traffic uses separate persistent connections. SQLite atomically saves the complete versioned workspace aggregate in `application_state`, including recursive layouts, panes, settings, and agent metadata. Mutations that fail persistence are rolled back. Native process state is not transactionally rewindable.
 
@@ -86,17 +86,17 @@ Any IPC method can also be sent directly with a JSON parameter object. The conso
 
 ## Agent integration
 
-Process-tree monitoring recognizes native Codex, Claude, OpenCode, Cursor Agent, Copilot, and Hermes executable names. Process detection shows `unknown` until an integration reports a meaningful state. Detection does not infer “working” or “waiting” from terminal text. When the GUI shuts down, active registered agent panes are stopped and marked for restoration while ordinary terminal panes remain attached to the persistent runtime. GUI startup restores those panes and waits for the next user prompt.
+Process-tree monitoring recognizes native Codex, Claude, OpenCode, Cursor Agent, Copilot, Hermes, Gemini, Qwen, Aider, Crush, Goose, Amp, Kiro, Amazon Q, OpenHands, Pi, Cline, and Kilo Code executable names. Process detection shows `unknown` until an integration reports a meaningful state. Detection does not infer “working” or “waiting” from terminal text. When the GUI shuts down, active registered agent panes are stopped while ordinary terminal panes remain attached to the persistent runtime. Stopped agent sessions can be resumed manually from another terminal using the agent's own resume command.
 
 The runtime injects `PANEACEA_PIPE`, `PANEACEA_PANE_ID`, and `PANEACEA_WORKSPACE_ID`. An agent hook or wrapper can register captured metadata:
 
 ```powershell
-.\build\bin\paneacea-cli.exe agent register '{"type":"claude","state":"working","sessionId":"SESSION-ID","rootPid":1234,"executable":"claude.exe","arguments":["--model","sonnet"]}'
+.\build\bin\paneacea-cli.exe agent register '{"type":"claude","state":"working","rootPid":1234,"executable":"claude.exe","arguments":["--model","sonnet"]}'
 ```
 
-The CLI fills the process generation from the root PID. The runtime verifies that PID belongs to the pane and rejects a nested agent replacing a live root identity. Report subsequent states using the same root PID and captured session ID. Launch flags must be supplied by the integration; process-name detection alone cannot capture them or discover a session ID.
+The CLI fills the process generation from the root PID. The runtime verifies that PID belongs to the pane and rejects a nested agent replacing a live root identity. Report subsequent states using the same root PID. `sessionId` is an optional field. Launch flags must be supplied by the integration; process-name detection alone cannot capture them or discover a session ID.
 
-Resume uses the native command forms from the plan for Codex, Claude, Cursor, OpenCode, and Hermes. Copilot resume is explicitly unsupported. Resume requires a captured session ID and executable. Restarting the runtime restores launch commands and supported captured agent sessions; shell variables and live OS processes cannot survive a runtime restart or reboot.
+Restarting the runtime relaunches saved launch commands; shell variables and live OS processes cannot survive a runtime restart or reboot.
 
 ## Validation and limits
 

@@ -2,6 +2,14 @@
   import XtermView from "./XtermView.svelte";
   import { paneHeader } from "../services/paneHeader";
   import { visiblePaneState } from "../services/paneStatus";
+  import {
+    RESUME_LOCK_MS,
+    agentIsRunning,
+    paneAgentResumable,
+    paneAgentTitle,
+  } from "../services/paneAgent";
+  import { call } from "../services/backend";
+  import agentIconUrl from "../../../icons/paneacea-agent.svg?url";
   import type { Layout, Pane, Settings } from "../services/backend";
   import type { Action } from "../shortcuts/actions";
   export let node: Layout;
@@ -34,6 +42,32 @@
       ),
     );
   }
+  // Panes with an in-flight resume; the icon stays unclickable until the
+  // resumed agent is seen running, the call fails, or RESUME_LOCK_MS passes.
+  let resuming: Record<string, boolean> = {};
+  function unlock(id: string) {
+    if (!resuming[id]) return;
+    const { [id]: _, ...rest } = resuming;
+    resuming = rest;
+  }
+  $: for (const id of Object.keys(resuming)) {
+    if (!panes[id] || panes[id].busy || agentIsRunning(panes[id].agent))
+      unlock(id);
+  }
+  // Types the last agent's resume (session picker) command into the pane.
+  async function resumeAgent(id: string) {
+    if (resuming[id]) return;
+    resuming = { ...resuming, [id]: true };
+    focus(id);
+    try {
+      await call("agent.resume", { paneId: id });
+    } catch (err) {
+      unlock(id);
+      error(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    setTimeout(() => unlock(id), RESUME_LOCK_MS);
+  }
   function end() {
     if (!dragging) return;
     dragging = false;
@@ -51,17 +85,18 @@
         title={pane.currentWorkingDirectory}
         >{paneHeader(pane)}</button
       >
-      {#if pane.agent}<span
-          class="agent"
-          title={pane.agent.sessionId || "Session ID not captured"}
-          >{pane.agent.state === "working"
-            ? "●"
-            : pane.agent.state === "waiting"
-              ? "!"
-              : pane.agent.state === "done"
-                ? "✓"
-                : "○"}
-          {pane.agent.type} · {pane.agent.state}</span
+      {#if pane.agent}<button
+          class="agent-icon-button"
+          class:resuming={resuming[pane.id]}
+          title={paneAgentTitle(pane.agent)}
+          aria-label={paneAgentTitle(pane.agent)}
+          aria-disabled={!paneAgentResumable(pane, resuming[pane.id])}
+          aria-busy={!!resuming[pane.id]}
+          on:click={() => {
+            if (paneAgentResumable(pane, resuming[pane.id])) resumeAgent(pane.id);
+            else focus(pane.id);
+          }}
+          ><img class="agent-icon" src={agentIconUrl} alt="" /></button
         >{/if}
       {#if visiblePaneState(pane.status)}<span class="pane-status"
           >{visiblePaneState(pane.status)}</span

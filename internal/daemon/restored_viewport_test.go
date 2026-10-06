@@ -64,8 +64,9 @@ func TestRestoredViewportOpensAtBottom(t *testing.T) {
 	defer r.Close()
 
 	output := invoke(t, r, "terminal.attach", Params{PaneID: paneID}).(ipc.Output)
-	if !output.Restored {
-		t.Fatal("restored history was not marked as restored")
+	// Saved output is not replayed after a restart, so the pane is not marked as restored.
+	if output.Restored {
+		t.Fatal("saved history was unexpectedly restored")
 	}
 	if output.ViewportOffset != 0 {
 		t.Fatalf("restored viewport offset = %d, want 0", output.ViewportOffset)

@@ -50,7 +50,7 @@ func configureBashStartup(executable string, arguments []string, environment map
 	} else if !loginShell && !noRc && !customRc {
 		init.WriteString(`; [[ -r ~/.bashrc ]] && . ~/.bashrc`)
 	}
-	init.WriteString(`; __paneacea_prompt_hook() { printf '\033]7;file://localhost/%s\007' "$(pwd -W 2>/dev/null || pwd)"; history -a; }; if declare -p PROMPT_COMMAND 2>/dev/null | grep -q 'declare -a'; then PROMPT_COMMAND+=(__paneacea_prompt_hook); else PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }__paneacea_prompt_hook"; fi; shopt -s histappend; fi; __paneacea_prompt_hook`)
+	init.WriteString(`; __paneacea_command_number='\#'; __paneacea_prompt_hook() { if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then printf '\033]1999;paneacea;command=%s\007' "${__paneacea_command_number@P}"; fi; printf '\033]7;file://localhost/%s\007' "$(pwd -W 2>/dev/null || pwd)"; history -a; }; if declare -p PROMPT_COMMAND 2>/dev/null | grep -q 'declare -a'; then PROMPT_COMMAND+=(__paneacea_prompt_hook); else PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; }__paneacea_prompt_hook"; fi; shopt -s histappend; fi; __paneacea_prompt_hook`)
 	environment["PROMPT_COMMAND"] = init.String()
 	updated := make([]string, 0, len(arguments)+2)
 	if !noProfile {

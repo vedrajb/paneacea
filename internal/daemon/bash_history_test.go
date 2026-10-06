@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/vt"
 	"github.com/paneacea/paneacea/internal/ipc"
 	"github.com/paneacea/paneacea/internal/model"
 	"github.com/paneacea/paneacea/internal/persistence"
@@ -65,17 +64,14 @@ func TestBashHistorySurvivesStartupOutput(t *testing.T) {
 	if err != nil || !bytes.Contains(history.Data, []byte("SAVED_BEFORE_RESTART")) {
 		t.Fatalf("history was not saved: %v", err)
 	}
-	// Capture the earliest possible attach, before any new ConPTY output arrives.
-	restored := newOutput()
-	restored.emulator = vt.NewEmulator(history.Columns, history.Rows)
-	restored.emulator.SetScrollbackSize(10000)
-	if err = restored.restore(history.Data); err != nil {
-		t.Fatal(err)
-	}
-	attached := restored.attachSnapshot(restored.scrollbackLines())
 	r, err = New(store)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Capture the earliest possible attach; saved output must not be replayed into the fresh shell.
+	attached := invoke(t, r, "terminal.attach", Params{PaneID: id}).(ipc.Output)
+	if attached.Restored || bytes.Contains(attached.Data, []byte("SAVED_BEFORE_RESTART")) {
+		t.Fatalf("saved output was replayed on attach: restored=%v", attached.Restored)
 	}
 	invoke(t, r, "pane.sendInput", Params{PaneID: id, Data: "printf 'FRESH_%s\\n' 'AFTER_RESTART'\r"})
 	waitFor("FRESH_AFTER_RESTART")
@@ -97,8 +93,8 @@ func TestBashHistorySurvivesStartupOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !bytes.Contains(output.Data, []byte("SAVED_BEFORE_RESTART")) {
-		t.Fatalf("startup erased restored history; fresh output: %q", output.Data)
+	if bytes.Contains(output.Data, []byte("SAVED_BEFORE_RESTART")) {
+		t.Fatalf("saved output was replayed after restart; output: %q", output.Data)
 	}
 }
 
@@ -201,7 +197,7 @@ func TestLoginBashTracksDirectoryAndRecallsCommandAfterRuntimeRestart(t *testing
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		output := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: id}).(ipc.Output)
-		if bytes.Count(output.Data, []byte("PANEACEA_RECALL_SAVED")) >= 2 {
+		if bytes.Count(output.Data, []byte("PANEACEA_RECALL_SAVED")) >= 1 {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -308,7 +304,7 @@ func TestLoginBashKeepsCommandHistorySeparatePerPane(t *testing.T) {
 		deadline := time.Now().Add(8 * time.Second)
 		for time.Now().Before(deadline) {
 			output := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: id}).(ipc.Output)
-			if bytes.Count(output.Data, []byte(markers[i])) >= 2 {
+			if bytes.Count(output.Data, []byte(markers[i])) >= 1 {
 				if bytes.Contains(output.Data, []byte(markers[1-i])) {
 					t.Fatalf("pane %d recalled the other pane's command", i)
 				}
@@ -317,7 +313,7 @@ func TestLoginBashKeepsCommandHistorySeparatePerPane(t *testing.T) {
 			time.Sleep(25 * time.Millisecond)
 		}
 		output := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: id}).(ipc.Output)
-		if bytes.Count(output.Data, []byte(markers[i])) < 2 {
+		if bytes.Count(output.Data, []byte(markers[i])) < 1 {
 			t.Fatalf("pane %d did not recall its command after restart", i)
 		}
 	}

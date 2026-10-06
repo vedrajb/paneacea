@@ -19,7 +19,7 @@ func Run(args []string, out io.Writer) error {
   workspace list | create NAME ROOT | switch NAME_OR_ID
   tab create | rename TITLE | close
   pane split --right | --down
-  agent list | resume | register JSON
+  agent list | register JSON
   METHOD JSON       Send any runtime protocol request
 Environment: PANEACEA_PANE_ID and PANEACEA_WORKSPACE_ID select context.`)
 		return err

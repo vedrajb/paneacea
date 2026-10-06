@@ -33,8 +33,9 @@ The result shown above is illustrative; workspace creation returns the updated f
 | `terminal.attach` | `paneId` | Initial screen, restoration metadata, and then output events |
 | `terminal.viewport.set` | `paneId`, `offset` | Saves the pane's live scroll offset until it closes or the runtime exits |
 | `settings.set` | `key`, `value` | Full state |
+| `agent.resume` | `paneId` | Empty object; types the last agent's session picker command (`codex resume`, `claude --resume`, `pi --resume`, `cursor-agent --resume`) into the idle pane shell. Fails if no resumable agent ran in the pane, the agent is still running, or another command is in the foreground |
 
-The desktop lifecycle uses two additional runtime methods. `agent.stop` stops active registered agent panes and marks them for restoration while leaving ordinary terminal panes running. `agent.restore` relaunches panes marked by `agent.stop`; the resumed agent is restored without sending a new prompt. These calls are intended for the GUI lifecycle and take no parameters.
+The desktop lifecycle uses one additional runtime method. `agent.stop` stops active registered agent panes when the GUI shuts down while leaving ordinary terminal panes running; sessions can be resumed manually from another terminal using the agent's own resume command. The call takes no parameters.
 
 `tab.create` and `pane.split` accept optional `executable`, `arguments` (string array), and `environment` (string map). When `executable` is omitted, the runtime uses the persisted `settings.defaultShell` object. A new installation selects the first available profile in this order: Git Bash, PowerShell 7, Windows PowerShell, then Command Prompt. When selecting a different executable explicitly, provide its arguments, including `[]` if none. No command string is passed through an intermediate shell.
 

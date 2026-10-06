@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-test("saved Git Bash output survives a fresh ConPTY stream in xterm", async ({
+test("restarted Git Bash pane starts without saved output in xterm", async ({
   page,
 }, testInfo) => {
   test.setTimeout(60000);
@@ -57,7 +57,7 @@ test("saved Git Bash output survives a fresh ConPTY stream in xterm", async ({
     host.remove();
     return { before, after };
   }, fixture);
-  expect(rendered.before).toContain("SAVED_BEFORE_RESTART");
+  expect(rendered.before).not.toContain("SAVED_BEFORE_RESTART");
   expect(rendered.after).toContain("FRESH_AFTER_RESTART");
-  expect(rendered.after).toContain("SAVED_BEFORE_RESTART");
+  expect(rendered.after).not.toContain("SAVED_BEFORE_RESTART");
 });

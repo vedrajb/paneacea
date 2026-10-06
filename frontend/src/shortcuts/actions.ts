@@ -30,7 +30,6 @@ export const actions = {
   "Paneacea.CommandPalette": "Paneacea: Command Palette",
   "Paneacea.Settings": "Preferences: Open Settings",
   "Paneacea.Reconnect": "Paneacea: Reconnect Runtime",
-  "Agent.Resume": "Agent: Resume Captured Session",
   "Help.ShowShortcuts": "Help: Keyboard Shortcuts",
 } as const;
 export type Action = keyof typeof actions;

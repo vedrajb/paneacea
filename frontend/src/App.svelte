@@ -394,9 +394,6 @@
       case "Terminal.Restart":
         await mutate("pane.restart", { paneId });
         return;
-      case "Agent.Resume":
-        await mutate("agent.resume", { paneId });
-        return;
       case "Terminal.SplitPaneRight":
       case "Terminal.SplitPaneDown":
       case "Terminal.SplitPaneAuto": {

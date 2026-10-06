@@ -21,7 +21,6 @@ func New() *App { return &App{streams: map[string]*ipc.Client{}} }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	_, _ = a.Call("agent.restore", nil)
 }
 func (a *App) DomReady(ctx context.Context) {
 	wailsruntime.WindowShow(ctx)

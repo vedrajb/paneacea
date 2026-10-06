@@ -385,12 +385,17 @@ main {
   padding-left: 7px;
 }
 .pane-name {
+  cursor: default;
   flex: 1;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 3px;
+}
+/* The path only focuses the pane; it must not look interactive. */
+.pane-name:hover {
+  background: transparent;
 }
 .pane-header > button:last-child {
   opacity: 0;
@@ -404,9 +409,26 @@ main {
 .pane-status {
   font-size: 10px;
 }
-.agent {
-  color: #b4c9a9;
-  font-size: 10px;
+.agent-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: block;
+}
+.agent-icon-button {
+  flex: none;
+  padding: 2px;
+  border-radius: 3px;
+}
+.agent-icon-button[aria-disabled="true"] {
+  cursor: default;
+}
+.agent-icon-button[aria-disabled="true"]:hover {
+  background: transparent;
+}
+.agent-icon-button.resuming {
+  opacity: 0.45;
+  cursor: progress;
 }
 .waiting {
   color: var(--warning);

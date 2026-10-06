@@ -48,10 +48,6 @@ func TestAgentStopLeavesOrdinaryShellRunning(t *testing.T) {
 	if state.Panes[id].PID != pid || state.Panes[id].Status != "running" {
 		t.Fatal("agent stop changed an ordinary shell")
 	}
-	state = invoke(t, r, "agent.restore", nil).(*model.State)
-	if state.Panes[id].PID != pid || state.Panes[id].Status != "running" {
-		t.Fatal("agent restore changed an ordinary shell")
-	}
 }
 
 func TestAgentStopMarksAndTerminatesRegisteredAgentPane(t *testing.T) {

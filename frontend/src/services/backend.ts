@@ -8,11 +8,12 @@ export type Layout = {
 export type Agent = {
   type: string;
   state: string;
-  sessionId: string;
+  sessionId?: string;
   rootPid: number;
   processGeneration: string;
   executable: string;
   arguments: string[];
+  resumeCommand?: string;
 };
 export type Pane = {
   id: string;
@@ -21,6 +22,7 @@ export type Pane = {
   title: string;
   executable: string;
   runningProgram?: string;
+  busy?: boolean;
   arguments: string[];
   currentWorkingDirectory: string;
   status: string;

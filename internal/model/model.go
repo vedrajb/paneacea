@@ -42,6 +42,9 @@ type Agent struct {
 	ProcessGeneration string   `json:"processGeneration"`
 	Executable        string   `json:"executable"`
 	Arguments         []string `json:"arguments"`
+	// ResumeCommand is the agent's session picker command, set by the runtime
+	// from agents.ResumeCommand; empty when the agent cannot be resumed.
+	ResumeCommand string `json:"resumeCommand,omitempty"`
 }
 type Pane struct {
 	ID                      string            `json:"id"`
@@ -50,6 +53,9 @@ type Pane struct {
 	ProfileID               string            `json:"profileId"`
 	Executable              string            `json:"executable"`
 	RunningProgram          string            `json:"runningProgram,omitempty"`
+	// Busy is set by the runtime monitor while any command (not just the
+	// shell) is running in the pane.
+	Busy bool `json:"busy,omitempty"`
 	Arguments               []string          `json:"arguments"`
 	Environment             map[string]string `json:"environment"`
 	InitialWorkingDirectory string            `json:"initialWorkingDirectory"`

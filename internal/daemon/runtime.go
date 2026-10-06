@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +48,18 @@ type Runtime struct {
 	historyDone       chan struct{}
 	viewportOffsets   map[string]int
 	shutting          bool
+	// agentPrompts tracks shell prompts seen after a pane's agent exited.
+	agentPrompts map[string]agentPrompt
+	// commandNumbered marks panes whose shell reports command numbers.
+	commandNumbered map[string]bool
+	// resuming holds, per pane, when an in-flight agent.resume lock expires.
+	resuming map[string]time.Time
+	// promptAware marks panes whose shell reports prompts; for these, busy
+	// means a command was submitted and its prompt has not returned yet, so
+	// background jobs (cmd &) do not count.
+	promptAware map[string]bool
+	// commandPending marks prompt-aware panes with a submitted command.
+	commandPending map[string]bool
 
 	systemShuttingDown func() bool
 }
@@ -107,6 +118,14 @@ func New(store Storage) (*Runtime, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.mu.Lock()
+	for _, p := range state.Panes {
+		// Busy is recomputed by the monitor for the relaunched shell.
+		p.Busy = false
+		// Agents saved before resumeCommand existed get it filled in.
+		if p.Agent != nil {
+			p.Agent.ResumeCommand = agents.ResumeCommand(p.Agent.Type)
+		}
+	}
 	for _, p := range state.Panes {
 		if err = r.launch(p); err != nil {
 			p.Status = "error"
@@ -329,27 +348,9 @@ func (r *Runtime) launch(p *model.Pane) error {
 	output.modes = map[ansi.Mode]bool{}
 	output.emulator.SetScrollbackSize(historyLines)
 	output.emulator.SetCallbacks(vt.Callbacks{EnableMode: func(mode ansi.Mode) { output.modes[mode] = true }, DisableMode: func(mode ansi.Mode) { output.modes[mode] = false }})
+	// Saved terminal output is not replayed on launch; restored panes start a fresh shell in their
+	// saved working directory, and Git Bash keeps its per-pane command history (HISTFILE) below.
 	historyWarning := ""
-	if historyStore, ok := r.store.(TerminalHistoryStorage); ok && r.state.Settings.TerminalHistoryLines > 0 {
-		history, loadErr := historyStore.LoadTerminalHistory(p.ID)
-		if loadErr == nil {
-			// Seed the emulator before starting the new shell so its output follows saved history.
-			columns, rows = history.Columns, history.Rows
-			p.Columns, p.Rows = uint16(columns), uint16(rows)
-			output.emulator = vt.NewEmulator(columns, rows)
-			output.emulator.SetScrollbackSize(historyLines)
-			output.emulator.SetCallbacks(vt.Callbacks{EnableMode: func(mode ansi.Mode) { output.modes[mode] = true }, DisableMode: func(mode ansi.Mode) { output.modes[mode] = false }})
-			if restoreErr := output.restore(history.Data); restoreErr != nil {
-				historyWarning = fmt.Sprintf("terminal history could not be restored: %v", restoreErr)
-				r.unreadableHistory[p.ID] = true
-			} else {
-				r.viewportOffsets[p.ID] = 0
-			}
-		} else if !errors.Is(loadErr, sql.ErrNoRows) {
-			historyWarning = fmt.Sprintf("terminal history could not be restored: %v", loadErr)
-			r.unreadableHistory[p.ID] = true
-		}
-	}
 	ready := make(chan *terminal.Session, 1)
 	go func() {
 		session := <-ready
@@ -387,22 +388,6 @@ func (r *Runtime) launch(p *model.Pane) error {
 	environment["PANEACEA_WORKSPACE_ID"] = p.WorkspaceID
 	executable := p.Executable
 	arguments := append([]string(nil), p.Arguments...)
-	if p.Status == agentStoppedStatus {
-		if p.Agent == nil || p.Agent.SessionID == "" {
-			return fmt.Errorf("agent session metadata is unavailable")
-		}
-		ex, args, e := agents.BuildResumeCommand(p.Agent)
-		if e != nil {
-			return e
-		}
-		executable = ex
-		arguments = args
-	} else if p.Agent != nil && p.Agent.SessionID != "" {
-		if ex, args, e := agents.BuildResumeCommand(p.Agent); e == nil {
-			executable = ex
-			arguments = args
-		}
-	}
 	arguments = shellIntegration(executable, arguments, environment)
 	arguments, bashSetup := configureBashStartup(executable, arguments, environment)
 	if bashSetup && environment["HISTFILE"] == "" {
@@ -477,11 +462,6 @@ func (r *Runtime) launch(p *model.Pane) error {
 	started = true
 	p.PID = session.PID()
 	p.RunningProgram = executable
-	if p.Agent != nil && p.Agent.SessionID != "" && agents.Detect(executable) == p.Agent.Type {
-		p.Agent.RootPID = p.PID
-		p.Agent.ProcessGeneration = process.Generation(p.PID)
-		p.Agent.State = "unknown"
-	}
 	p.RuntimeTerminalID = p.ID
 	p.Status = "running"
 	p.Error = historyWarning
@@ -544,6 +524,23 @@ func (r *Runtime) metadata(id, value string) {
 			changed = true
 		}
 	}
+	// Prompt events drop the agent indicator once a command other than the
+	// agent has run. Shells with Paneacea integration report a command number
+	// (unchanged on empty Enter); others fall back to counting OSC 7 prompts.
+	if command, ok := strings.CutPrefix(value, commandNumberPrefix); ok {
+		if r.commandNumbered == nil {
+			r.commandNumbered = map[string]bool{}
+		}
+		r.commandNumbered[id] = true
+		if command == "" {
+			command = "0"
+		}
+		changed = r.promptLocked(p) || changed
+		changed = r.agentPromptLocked(p, command) || changed
+	} else if strings.HasPrefix(value, "7;") && !r.commandNumbered[id] {
+		changed = r.promptLocked(p) || changed
+		changed = r.agentPromptLocked(p, "") || changed
+	}
 	if strings.HasPrefix(value, "7;") {
 		uri, err := url.Parse(value[2:])
 		if err == nil && uri.Scheme == "file" && (uri.Host == "" || uri.Host == "localhost" || strings.EqualFold(uri.Host, hostName())) {
@@ -562,6 +559,208 @@ func (r *Runtime) metadata(id, value string) {
 	}
 }
 func hostName() string { name, _ := os.Hostname(); return name }
+
+// newDetectedAgent builds the agent record for a process found by the monitor.
+func newDetectedAgent(kind string, pid uint32, generation string) *model.Agent {
+	return &model.Agent{Type: kind, State: "unknown", RootPID: pid, ProcessGeneration: generation, ResumeCommand: agents.ResumeCommand(kind)}
+}
+
+// resumeLockDuration bounds how long a pane rejects repeated agent.resume
+// calls when the resumed agent is never detected (e.g. picker quit at once).
+const resumeLockDuration = 10 * time.Second
+
+// resumeAgent takes a per-pane lock so repeated clicks cannot type the command
+// twice; the lock is released on failure, when the monitor detects the resumed
+// agent, or after resumeLockDuration.
+func (r *Runtime) resumeAgent(paneID string) error {
+	r.mu.Lock()
+	if time.Now().Before(r.resuming[paneID]) {
+		r.mu.Unlock()
+		return fmt.Errorf("resume already in progress")
+	}
+	if r.resuming == nil {
+		r.resuming = map[string]time.Time{}
+	}
+	r.resuming[paneID] = time.Now().Add(resumeLockDuration)
+	r.mu.Unlock()
+	if err := r.typeResumeCommand(paneID); err != nil {
+		r.mu.Lock()
+		delete(r.resuming, paneID)
+		r.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// typeResumeCommand types the last agent's resume command (its session picker)
+// into the pane shell. It refuses while the agent or any other command is running.
+func (r *Runtime) typeResumeCommand(paneID string) error {
+	r.mu.Lock()
+	session := r.sessions[paneID]
+	pane := r.state.Panes[paneID]
+	var agent model.Agent
+	var panePID uint32
+	var executable string
+	running := false
+	if pane != nil {
+		if pane.Agent != nil {
+			agent = *pane.Agent
+		}
+		panePID, executable, running = pane.PID, pane.Executable, pane.Status == "running"
+	}
+	r.mu.Unlock()
+	if session == nil || pane == nil || !running {
+		return fmt.Errorf("terminal not found")
+	}
+	if agent.Type == "" {
+		return fmt.Errorf("no agent has run in this pane")
+	}
+	command := agents.ResumeCommand(agent.Type)
+	if command == "" {
+		return fmt.Errorf("%s has no resume session picker", agent.Type)
+	}
+	if agent.RootPID != 0 && process.Generation(agent.RootPID) == agent.ProcessGeneration {
+		return fmt.Errorf("%s is still running", agent.Type)
+	}
+	r.mu.Lock()
+	promptAware, pending := r.promptAware[paneID], r.commandPending[paneID]
+	r.mu.Unlock()
+	if promptAware {
+		if pending {
+			return fmt.Errorf("pane is busy running a command")
+		}
+	} else {
+		items, err := process.Snapshot()
+		if err != nil {
+			return err
+		}
+		if busy := foregroundCommand(items, panePID, paneOrphans(items, cachedPaneID, msysForked)[paneID]); busy != "" {
+			return fmt.Errorf("pane is busy running %s", busy)
+		}
+	}
+	if err := session.Write([]byte(clearLineInput(executable) + command + "\r")); err != nil {
+		return err
+	}
+	r.commandSubmitted(paneID)
+	return nil
+}
+
+// commandSubmitted marks a prompt-aware pane busy after Enter was sent, until
+// the shell prints its next prompt (see promptLocked).
+func (r *Runtime) commandSubmitted(paneID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pane := r.state.Panes[paneID]
+	if pane == nil || !r.promptAware[paneID] || r.commandPending[paneID] {
+		return
+	}
+	r.commandPending[paneID] = true
+	if !pane.Busy {
+		pane.Busy = true
+		r.state.Revision++
+		if err := r.store.Save(r.state); err != nil {
+			log.Printf("save pane busy state: %v", err)
+		}
+	}
+}
+
+// promptLocked records a shell prompt: the pane is prompt-aware and idle.
+// Background jobs started with & return to the prompt, so they are not busy.
+func (r *Runtime) promptLocked(p *model.Pane) bool {
+	if r.promptAware == nil {
+		r.promptAware = map[string]bool{}
+		r.commandPending = map[string]bool{}
+	}
+	r.promptAware[p.ID] = true
+	delete(r.commandPending, p.ID)
+	if !p.Busy {
+		return false
+	}
+	p.Busy = false
+	return true
+}
+
+// paneShells are processes that make up an idle pane (the shell itself, Git
+// Bash's inner bash and console hosts).
+var paneShells = map[string]bool{
+	"bash.exe": true, "pwsh.exe": true, "powershell.exe": true, "cmd.exe": true,
+	"conhost.exe": true, "openconsole.exe": true,
+}
+
+// foregroundCommand returns the first non-shell process under the pane or among
+// its orphaned processes (e.g. Git Bash script shims), or "" when the pane is
+// idle at its prompt.
+func foregroundCommand(items []process.Info, panePID uint32, orphans []process.Info) string {
+	for _, p := range append(process.Descendants(items, panePID), orphans...) {
+		if !paneShells[strings.ToLower(p.Executable)] {
+			return p.Executable
+		}
+	}
+	return ""
+}
+
+// clearLineInput returns the keystroke that discards partially typed input at
+// the shell prompt so the resume command is not appended to it.
+func clearLineInput(executable string) string {
+	switch strings.ToLower(filepath.Base(executable)) {
+	case "bash.exe":
+		return "\x15" // readline unix-line-discard (Ctrl+U)
+	case "pwsh.exe", "powershell.exe", "cmd.exe":
+		return "\x1b" // Escape clears the PSReadLine/cmd input line
+	}
+	return ""
+}
+
+// commandNumberPrefix is the private OSC emitted by the bash/PowerShell prompt
+// hooks with the shell's command number.
+const commandNumberPrefix = "1999;paneacea;command="
+
+// agentPromptLocked handles a prompt for pane p and clears its agent when
+// another command has run. command is "" when the shell has no command numbers.
+func (r *Runtime) agentPromptLocked(p *model.Pane, command string) bool {
+	if p.Agent == nil || p.Agent.RootPID == 0 {
+		return false
+	}
+	alive := process.Generation(p.Agent.RootPID) == p.Agent.ProcessGeneration
+	if r.agentPrompts == nil {
+		r.agentPrompts = map[string]agentPrompt{}
+	}
+	next, clear := countAgentPrompt(r.agentPrompts[p.ID], p.Agent, alive, command)
+	if !clear {
+		r.agentPrompts[p.ID] = next
+		return false
+	}
+	p.Agent = nil
+	delete(r.agentPrompts, p.ID)
+	return true
+}
+
+// agentPrompt tracks prompts for one agent process identity.
+type agentPrompt struct {
+	rootPID    uint32
+	generation string
+	exited     bool
+	command    string
+}
+
+// countAgentPrompt records a shell prompt and reports whether the agent should
+// be cleared. The first prompt after the agent exits ends the agent command, so
+// the indicator stays. A later prompt clears it when the command number changed
+// (empty Enter keeps it), or always when command numbers are unavailable ("").
+func countAgentPrompt(prev agentPrompt, agent *model.Agent, alive bool, command string) (agentPrompt, bool) {
+	if prev.rootPID != agent.RootPID || prev.generation != agent.ProcessGeneration {
+		prev = agentPrompt{rootPID: agent.RootPID, generation: agent.ProcessGeneration}
+	}
+	if alive {
+		return prev, false
+	}
+	if !prev.exited {
+		prev.exited = true
+		prev.command = command
+		return prev, false
+	}
+	return prev, command == "" || command != prev.command
+}
 func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	var p Params
 	if len(params) > 0 && string(params) != "null" {
@@ -624,7 +823,13 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 			if len(p.Data) > 65536 {
 				return nil, fmt.Errorf("input exceeds 64 KiB")
 			}
-			return struct{}{}, session.Write([]byte(p.Data))
+			if err := session.Write([]byte(p.Data)); err != nil {
+				return nil, err
+			}
+			if strings.ContainsAny(p.Data, "\r\n") {
+				r.commandSubmitted(p.PaneID)
+			}
+			return struct{}{}, nil
 		}
 		if err := session.Resize(p.Columns, p.Rows); err != nil {
 			return nil, err
@@ -644,8 +849,8 @@ func (r *Runtime) Call(ctx context.Context, method string, params json.RawMessag
 	if method == "agent.stop" {
 		return r.stopAgents()
 	}
-	if method == "agent.restore" {
-		return r.restoreAgents()
+	if method == "agent.resume" {
+		return struct{}{}, r.resumeAgent(p.PaneID)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -793,55 +998,6 @@ func (r *Runtime) stopAgents() (any, error) {
 	return result, nil
 }
 
-func (r *Runtime) restoreAgents() (any, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	before := clone(r.state)
-	oldSessions := map[string]*terminal.Session{}
-	oldOutputs := map[string]*outputBuffer{}
-	for id, session := range r.sessions {
-		oldSessions[id] = session
-	}
-	for id, output := range r.outputs {
-		oldOutputs[id] = output
-	}
-	changed := false
-	for _, pane := range r.state.Panes {
-		if pane.Status != agentStoppedStatus || pane.Agent == nil || pane.Agent.SessionID == "" {
-			continue
-		}
-		if r.stoppingAgents[pane.ID] {
-			continue
-		}
-		if err := r.launch(pane); err != nil {
-			pane.Status = "error"
-			pane.Error = err.Error()
-		} else {
-			pane.Error = ""
-		}
-		changed = true
-	}
-	if changed {
-		r.state.Revision++
-		if err := r.store.Save(r.state); err != nil {
-			for id, session := range r.sessions {
-				if oldSessions[id] != session {
-					go session.Close()
-				}
-			}
-			for id, output := range r.outputs {
-				if oldOutputs[id] != output {
-					output.exit()
-				}
-			}
-			r.sessions = oldSessions
-			r.outputs = oldOutputs
-			r.state = before
-			return nil, fmt.Errorf("persist agent restoration: %w", err)
-		}
-	}
-	return clone(r.state), nil
-}
 func (r *Runtime) rollback(before *model.State, old map[string]*terminal.Session) {
 	for id, s := range r.sessions {
 		if old[id] != s {
@@ -1005,7 +1161,7 @@ func (r *Runtime) mutate(method string, p Params) error {
 		}
 		*node = model.Layout{Orientation: p.Orientation, Ratio: 0.5, First: &model.Layout{PaneID: pane.ID}, Second: &model.Layout{PaneID: created.ID}}
 		t.ActivePaneID = created.ID
-	case "pane.focus", "pane.close", "pane.restart", "agent.resume", "agent.register":
+	case "pane.focus", "pane.close", "pane.restart", "agent.register":
 		if pane == nil {
 			return fmt.Errorf("pane not found")
 		}
@@ -1023,20 +1179,11 @@ func (r *Runtime) mutate(method string, p Params) error {
 			} else if t.ActivePaneID == pane.ID {
 				t.ActivePaneID = t.RootLayoutNode.Leaves()[0]
 			}
-		case "pane.restart", "agent.resume":
-			if pane.Status == "running" && method == "pane.restart" {
-				return fmt.Errorf("close the running command before restarting or resuming")
+		case "pane.restart":
+			if pane.Status == "running" {
+				return fmt.Errorf("close the running command before restarting")
 			}
-			if method == "agent.resume" {
-				if pane.Agent != nil && pane.Agent.RootPID != 0 && process.Generation(pane.Agent.RootPID) == pane.Agent.ProcessGeneration {
-					return fmt.Errorf("agent session is already running")
-				}
-				if _, _, err := agents.BuildResumeCommand(pane.Agent); err != nil {
-					return err
-				}
-			} else {
-				pane.Agent = nil
-			}
+			pane.Agent = nil
 			if err := r.launch(pane); err != nil {
 				return err
 			}
@@ -1098,6 +1245,11 @@ func (r *Runtime) removePane(id string) {
 	}
 	delete(r.state.Panes, id)
 	delete(r.sessions, id)
+	delete(r.agentPrompts, id)
+	delete(r.commandNumbered, id)
+	delete(r.resuming, id)
+	delete(r.promptAware, id)
+	delete(r.commandPending, id)
 	delete(r.unreadableHistory, id)
 	delete(r.viewportOffsets, id)
 	w, tab := r.state.Tab(pane.TabID)
@@ -1114,8 +1266,8 @@ func (r *Runtime) removePane(id string) {
 	}
 }
 func (r *Runtime) register(pane *model.Pane, agent *model.Agent) error {
-	if agent == nil || agent.SessionID == "" || agent.RootPID == 0 || !agents.ValidState(agent.State) {
-		return fmt.Errorf("agent session, root PID, and valid state required")
+	if agent == nil || agent.RootPID == 0 || !agents.ValidState(agent.State) {
+		return fmt.Errorf("agent root PID and valid state required")
 	}
 	items, err := process.Snapshot()
 	if err != nil {
@@ -1124,6 +1276,13 @@ func (r *Runtime) register(pane *model.Pane, agent *model.Agent) error {
 	owned := agent.RootPID == pane.PID
 	for _, p := range process.Descendants(items, pane.PID) {
 		if p.PID == agent.RootPID {
+			owned = true
+		}
+	}
+	if !owned {
+		// Processes orphaned by Git Bash fork/exec still carry the pane ID they
+		// inherited from the pane shell.
+		if id, ok := process.EnvironmentVariable(agent.RootPID, paneIDVariable); ok && id == pane.ID {
 			owned = true
 		}
 	}
@@ -1138,11 +1297,88 @@ func (r *Runtime) register(pane *model.Pane, agent *model.Agent) error {
 		return fmt.Errorf("nested agent cannot replace root identity")
 	}
 	if agents.Detect(agent.Executable) != agent.Type {
-		return fmt.Errorf("agent executable does not match adapter")
+		// Script-hosted agents (node.exe, python.exe, ...) are verified against
+		// the real command line of the registered root process.
+		if !agents.IsScriptHost(agent.Executable) || agents.DetectCommandLine(process.CommandLine(agent.RootPID)) != agent.Type {
+			return fmt.Errorf("agent executable does not match adapter")
+		}
 	}
+	// Never trust a caller-supplied resume command.
+	agent.ResumeCommand = agents.ResumeCommand(agent.Type)
 	pane.Agent = agent
 	return nil
 }
+// paneIDVariable is set on every pane shell and inherited by its children.
+const paneIDVariable = "PANEACEA_PANE_ID"
+
+// cachedPaneID reads the inherited pane ID of a process, cached per process generation.
+func cachedPaneID(pid uint32) string {
+	return process.CachedEnvironmentVariable(pid, process.Generation(pid), paneIDVariable)
+}
+
+// msysForked reports whether an orphan is an MSYS program, i.e. a Git Bash
+// fork/exec artifact rather than a detached daemon started from the pane.
+func msysForked(pid uint32) bool {
+	return process.IsMSYSImage(process.ImagePath(pid))
+}
+
+// paneOrphans maps pane IDs to processes cut off from the pane's process tree
+// (their parent exited, e.g. Git Bash running an npm shell shim via fork/exec),
+// plus their descendants. Ownership comes from the inherited PANEACEA_PANE_ID.
+// Only MSYS orphans are considered, so detached daemons launched from a pane
+// (servers, a nested runtime) never count as the pane's agent or command.
+func paneOrphans(items []process.Info, paneID func(pid uint32) string, forked func(pid uint32) bool) map[string][]process.Info {
+	result := map[string][]process.Info{}
+	for _, o := range process.Orphans(items) {
+		if !forked(o.PID) {
+			continue
+		}
+		id := paneID(o.PID)
+		// MSYS processes (sh.exe) keep their environment internally; the pane ID
+		// is only visible in the Windows environment of their direct children.
+		for _, child := range items {
+			if id != "" {
+				break
+			}
+			if child.ParentPID == o.PID {
+				id = paneID(child.PID)
+			}
+		}
+		if id == "" {
+			continue
+		}
+		result[id] = append(result[id], o)
+		result[id] = append(result[id], process.Descendants(items, o.PID)...)
+	}
+	return result
+}
+
+// cachedCommandLine reads a process command line, cached per process generation.
+func cachedCommandLine(pid uint32) string {
+	return process.CachedCommandLine(pid, process.Generation(pid))
+}
+
+// detectAgentKind detects an agent by image name, falling back to the command
+// line for script hosts such as node.exe or python.exe.
+func detectAgentKind(p process.Info, commandLine func(pid uint32) string) string {
+	if kind := agents.Detect(p.Executable); kind != "" {
+		return kind
+	}
+	if !agents.IsScriptHost(p.Executable) {
+		return ""
+	}
+	return agents.DetectCommandLine(commandLine(p.PID))
+}
+
+// runningProgramLabel shows the agent type instead of a bare script host
+// (e.g. "codex" instead of "node.exe") while an agent is active in the pane.
+func runningProgramLabel(program string, agent *model.Agent) string {
+	if agent != nil && agent.Type != "" && agent.State != "done" && agents.IsScriptHost(program) {
+		return agent.Type
+	}
+	return program
+}
+
 func (r *Runtime) monitor(ctx context.Context) {
 	defer close(r.done)
 	ticker := time.NewTicker(2 * time.Second)
@@ -1156,13 +1392,24 @@ func (r *Runtime) monitor(ctx context.Context) {
 			if err != nil {
 				continue
 			}
+			process.PruneCommandLines(items)
+			orphans := paneOrphans(items, cachedPaneID, msysForked)
 			r.mu.Lock()
 			changed := false
 			for _, pane := range r.state.Panes {
 				if pane.Status != "running" {
 					continue
 				}
-				program := process.RunningProgram(items, pane.PID, pane.Executable)
+				rawProgram := process.RunningProgram(items, pane.PID, pane.Executable)
+				busy := foregroundCommand(items, pane.PID, orphans[pane.ID]) != ""
+				if r.promptAware[pane.ID] {
+					busy = r.commandPending[pane.ID]
+				}
+				if pane.Busy != busy {
+					pane.Busy = busy
+					changed = true
+				}
+				program := runningProgramLabel(rawProgram, pane.Agent)
 				if pane.RunningProgram != program {
 					pane.RunningProgram = program
 					changed = true
@@ -1178,8 +1425,9 @@ func (r *Runtime) monitor(ctx context.Context) {
 						break
 					}
 				}
+				candidates = append(candidates, orphans[pane.ID]...)
 				for _, p := range candidates {
-					kind := agents.Detect(p.Executable)
+					kind := detectAgentKind(p, cachedCommandLine)
 					if kind == "" {
 						continue
 					}
@@ -1187,13 +1435,20 @@ func (r *Runtime) monitor(ctx context.Context) {
 					if generation == "" {
 						continue
 					}
-					pane.Agent = &model.Agent{Type: kind, State: "unknown", RootPID: p.PID, ProcessGeneration: generation}
+					pane.Agent = newDetectedAgent(kind, p.PID, generation)
+					// A (resumed) agent is running; release the resume lock.
+					delete(r.resuming, pane.ID)
 					changed = true
 					detected = true
 					break
 				}
 				if !detected && pane.Agent != nil && pane.Agent.State != "done" {
 					pane.Agent.State = "done"
+					changed = true
+				}
+				// Re-label with the agent state decided on this tick.
+				if label := runningProgramLabel(rawProgram, pane.Agent); pane.RunningProgram != label {
+					pane.RunningProgram = label
 					changed = true
 				}
 			}

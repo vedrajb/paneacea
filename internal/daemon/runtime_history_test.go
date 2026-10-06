@@ -70,17 +70,18 @@ func TestUnreadableTerminalHistoryIsPreservedUntilItCanBeDecrypted(t *testing.T)
 	blocked := r.unreadableHistory[paneID]
 	warning := r.state.Panes[paneID].Error
 	r.mu.Unlock()
-	if !blocked || !strings.Contains(warning, "DPAPI key unavailable") {
+	// Saved output is no longer loaded on launch, so an unreadable snapshot must not warn or block the pane.
+	if blocked || strings.Contains(warning, "DPAPI key unavailable") {
 		r.Close()
-		t.Fatalf("unreadable history was not retained as a pane warning: blocked=%v warning=%q", blocked, warning)
+		t.Fatalf("unreadable history affected pane launch: blocked=%v warning=%q", blocked, warning)
 	}
 	r.checkpointHistory(true)
 	r.Close()
 	store.mu.Lock()
-	saves, deletes, deleteAllCalls := store.saves, store.deletes, store.deleteAllCalls
+	deletes, deleteAllCalls := store.deletes, store.deleteAllCalls
 	store.mu.Unlock()
-	if saves != 0 || deletes != 0 || deleteAllCalls != 0 {
-		t.Fatalf("unreadable history was replaced or deleted: saves=%d deletes=%d deleteAll=%d", saves, deletes, deleteAllCalls)
+	if deletes != 0 || deleteAllCalls != 0 {
+		t.Fatalf("pane history was deleted: deletes=%d deleteAll=%d", deletes, deleteAllCalls)
 	}
 }
 
@@ -191,13 +192,11 @@ func TestTerminalHistoryRestoresIndependentlyAcrossSQLiteRestart(t *testing.T) {
 			}
 		}
 	}
-	restoredCounts := map[string]int{}
 	for id, marker := range markers {
 		output := invoke(t, r, "terminal.attach", Params{PaneID: id}).(ipc.Output)
-		if !output.Restored || !bytes.Contains(output.Data, []byte(marker)) {
-			t.Fatalf("pane %s history was not restored: restored=%v", id, output.Restored)
+		if output.Restored || bytes.Contains(output.Data, []byte(marker)) {
+			t.Fatalf("pane %s saved output was replayed: restored=%v", id, output.Restored)
 		}
-		restoredCounts[id] = bytes.Count(output.Data, []byte(marker))
 	}
 	invoke(t, r, "pane.sendInput", Params{PaneID: paneIDs[0], Data: "Write-Output 'PANE_HISTORY_FRESH'\r"})
 	deadline = time.Now().Add(15 * time.Second)
@@ -205,8 +204,8 @@ func TestTerminalHistoryRestoresIndependentlyAcrossSQLiteRestart(t *testing.T) {
 	for time.Now().Before(deadline) {
 		output := invoke(t, r, "terminal.requestSnapshot", Params{PaneID: paneIDs[0]}).(ipc.Output)
 		if bytes.Contains(output.Data, []byte("PANE_HISTORY_FRESH")) {
-			if bytes.Count(output.Data, []byte(markers[paneIDs[0]])) != restoredCounts[paneIDs[0]] {
-				t.Fatal("restored output was duplicated after fresh shell output")
+			if bytes.Contains(output.Data, []byte(markers[paneIDs[0]])) {
+				t.Fatal("saved output appeared after fresh shell output")
 			}
 			freshSeen = true
 			break
@@ -214,7 +213,7 @@ func TestTerminalHistoryRestoresIndependentlyAcrossSQLiteRestart(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !freshSeen {
-		t.Fatal("new shell output was not appended after restored history")
+		t.Fatal("new shell did not produce output after restart")
 	}
 	invoke(t, r, "pane.close", Params{PaneID: paneIDs[0]})
 	if _, err = store.LoadTerminalHistory(paneIDs[0]); !errors.Is(err, sql.ErrNoRows) {
