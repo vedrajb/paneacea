@@ -42,6 +42,11 @@ foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe"))
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable package executable is missing: $path" }
     if ((Get-Item -LiteralPath $path).Length -le 0) { throw "Portable package executable is empty: $path" }
 }
+foreach ($name in @("conpty.dll", "OpenConsole.exe", "conpty-LICENSE.txt")) {
+    $path = Join-Path $PackageDirectory $name
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable package ConPTY file is missing: $path" }
+    if ((Get-Item -LiteralPath $path).Length -le 0) { throw "Portable package ConPTY file is empty: $path" }
+}
 $launcher = Get-Content -LiteralPath (Join-Path $PackageDirectory "pca.cmd") -Raw
 if ($launcher -notmatch '%~dp0paneacea\.exe') { throw "Portable launcher does not target paneacea.exe in the package root." }
 $config = Get-Content -LiteralPath (Join-Path $PackageDirectory "config.toml") -Raw

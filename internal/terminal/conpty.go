@@ -5,6 +5,7 @@ package terminal
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,7 @@ type conptyProcess struct {
 	thread  windows.Handle
 	pid     uint32
 	job     windows.Handle
+	console pseudoConsoleAPI
 
 	closeRequest sync.Once
 	waitOnce     sync.Once
@@ -62,6 +64,7 @@ func newConPTY(options Options) (backend, error) {
 	var processHandle windows.Handle
 	var threadHandle windows.Handle
 	var jobHandle windows.Handle
+	console := currentPseudoConsole()
 	cleanup := func() {
 		if jobHandle != 0 {
 			_ = windows.CloseHandle(jobHandle)
@@ -77,7 +80,7 @@ func newConPTY(options Options) (backend, error) {
 			processHandle = 0
 		}
 		if pseudo != 0 {
-			windows.ClosePseudoConsole(pseudo)
+			console.close(pseudo)
 			pseudo = 0
 		}
 		for _, handle := range []*windows.Handle{&inputRead, &inputWrite, &outputRead, &outputWrite} {
@@ -108,7 +111,14 @@ func newConPTY(options Options) (backend, error) {
 	}
 
 	size := windows.Coord{X: int16(options.Columns), Y: int16(options.Rows)}
-	if err = windows.CreatePseudoConsole(size, inputRead, outputWrite, 0, &pseudo); err != nil {
+	err = console.create(size, inputRead, outputWrite, 0, &pseudo)
+	if err != nil && console.name != inboxPseudoConsole.name {
+		log.Printf("terminal: bundled pseudo console failed, using inbox ConPTY: %v", err)
+		console = inboxPseudoConsole
+		pseudo = 0
+		err = console.create(size, inputRead, outputWrite, 0, &pseudo)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("create pseudo console: %w", err)
 	}
 	_ = windows.CloseHandle(inputRead)
@@ -202,6 +212,7 @@ func newConPTY(options Options) (backend, error) {
 		process: processHandle,
 		pid:     processInfo.ProcessId,
 		job:     jobHandle,
+		console: console,
 	}
 	pseudo = 0
 	processHandle = 0
@@ -367,7 +378,7 @@ func (p *conptyProcess) Resize(columns, rows uint16) error {
 	if pseudo == 0 {
 		return io.ErrClosedPipe
 	}
-	return windows.ResizePseudoConsole(pseudo, windows.Coord{X: int16(columns), Y: int16(rows)})
+	return p.console.resize(pseudo, windows.Coord{X: int16(columns), Y: int16(rows)})
 }
 
 func (p *conptyProcess) Wait() error {
@@ -408,7 +419,7 @@ func (p *conptyProcess) Close() error {
 			_ = windows.TerminateProcess(processHandle, 1)
 		}
 		if pseudo != 0 {
-			windows.ClosePseudoConsole(pseudo)
+			p.console.close(pseudo)
 		}
 		if input != nil {
 			_ = input.Close()
@@ -450,7 +461,7 @@ func (p *conptyProcess) releaseResources() {
 			_ = output.Close()
 		}
 		if pseudo != 0 {
-			windows.ClosePseudoConsole(pseudo)
+			p.console.close(pseudo)
 		}
 		if threadHandle != 0 {
 			_ = windows.CloseHandle(threadHandle)

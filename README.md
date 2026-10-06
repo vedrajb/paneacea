@@ -146,6 +146,8 @@ Double-click a tab to rename it, drag tabs to reorder them, and right-click for 
 
 The Go runtime owns ConPTY, terminal screen emulation, process monitoring, and persistence. The Wails bridge forwards application requests to the runtime. Closing the GUI detaches the interface without terminating terminal processes, so reopening the app can reconnect to the same sessions.
 
+The build bundles Microsoft's ConPTY (`conpty.dll` and `OpenConsole.exe` from the pinned `Microsoft.Windows.Console.ConPTY` NuGet package, fetched by `scripts/fetch-conpty.ps1`) beside `paneacea-runtime.exe`. Unlike the inbox Windows ConPTY it passes application modes such as mouse tracking through to the terminal. Without those files the runtime falls back to the inbox ConPTY; set `PANEACEA_CONPTY=inbox` to force the fallback, or to an absolute `conpty.dll` path to test another build.
+
 Runtime data is stored beside `paneacea-runtime.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
 
 ```powershell

@@ -38,6 +38,7 @@ foreach ($directory in @($portableDirectory, $portableLogsDirectory)) {
 foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe")) {
     Copy-Item -LiteralPath (Join-Path $projectDirectory "build\bin\$name") -Destination $portableDirectory -Force
 }
+& (Join-Path $PSScriptRoot "fetch-conpty.ps1") -Destination @((Join-Path $projectDirectory "build\bin"), $portableDirectory)
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "pca.cmd") -Destination (Join-Path $portableDirectory "pca.cmd") -Force
 $portableConfig = Join-Path $portableDirectory "config.toml"
 if (-not (Test-Path -LiteralPath $portableConfig)) {

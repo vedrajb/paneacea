@@ -9,6 +9,7 @@
     terminalTheme,
   } from "../services/terminalOptions";
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
+  import { mouseWheelReport } from "../services/wheelReport";
   export let id: string;
   export let active: boolean;
   export let settings: Settings;
@@ -130,6 +131,26 @@
         settings.keybindings,
       ),
     );
+    let wheelPartial = 0;
+    // Inbox ConPTY swallows the app's mouse-mode requests, so xterm never sees them and would turn
+    // alt-screen wheel into Up/Down keys (history in pi). Send SGR wheel reports instead; ConPTY
+    // forwards them to mouse-aware apps and falls back to scrolling for the rest.
+    terminal.attachCustomWheelEventHandler((event) => {
+      if (terminal.buffer.active.type !== "alternate") return true;
+      const screen = terminal.element?.querySelector(".xterm-screen");
+      if (!screen) return true;
+      event.preventDefault();
+      const result = mouseWheelReport(
+        event,
+        screen.getBoundingClientRect(),
+        terminal.cols,
+        terminal.rows,
+        wheelPartial,
+      );
+      wheelPartial = result.partial;
+      if (result.report) terminal.input(result.report, true);
+      return false;
+    });
     const data = terminal.onData((text) => {
       if (queued + text.length > 65536) {
         error("Terminal input queue is full; wait before sending more input.");

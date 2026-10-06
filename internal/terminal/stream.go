@@ -15,6 +15,7 @@ const (
 var (
 	synchronizedOutputEnd = []byte("\x1b[?2026l")
 	showCursor            = []byte("\x1b[?25h")
+	hideCursor            = []byte("\x1b[?25l")
 )
 
 type OutputBatcher struct {
@@ -24,6 +25,8 @@ type OutputBatcher struct {
 	sequenceTail   []byte
 	syncDeadline   time.Time
 	syncEndPending bool
+	cursorHidden   bool
+	syncHeldSince  time.Time
 	closed         bool
 	maxBytes       int
 	emit           func([]byte)
@@ -121,6 +124,9 @@ func (b *OutputBatcher) flushOnTimer() {
 	b.emitMu.Lock()
 	defer b.emitMu.Unlock()
 	b.mu.Lock()
+	if len(b.buffer) == 0 {
+		b.syncHeldSince = time.Time{}
+	}
 	if len(b.buffer) == 0 || (!b.syncDeadline.IsZero() && time.Now().Before(b.syncDeadline)) {
 		b.mu.Unlock()
 		return
@@ -129,6 +135,7 @@ func (b *OutputBatcher) flushOnTimer() {
 	b.buffer = b.buffer[:0]
 	b.syncDeadline = time.Time{}
 	b.syncEndPending = false
+	b.syncHeldSince = time.Time{}
 	b.mu.Unlock()
 	b.emitAll([][]byte{payload})
 }
@@ -140,17 +147,36 @@ func (b *OutputBatcher) trackSynchronizedOutput(data []byte, now time.Time) {
 		b.syncEndPending = false
 	}
 	if end := bytes.LastIndex(sequence, synchronizedOutputEnd); end >= 0 {
-		b.syncDeadline = now.Add(SynchronizedOutputRepairDelay)
-		b.syncEndPending = true
+		// Only a visible cursor can be drawn in the wrong place before its repair; apps that keep it
+		// hidden (e.g. pi draws its own cursor) must not wait for a ?25h that never arrives.
+		if !cursorHiddenAfter(sequence[:end], b.cursorHidden) {
+			// Anchor the deadline to the first held frame so back-to-back frames (key repeat,
+			// streaming) cannot postpone the flush indefinitely.
+			if b.syncHeldSince.IsZero() {
+				b.syncHeldSince = now
+			}
+			b.syncDeadline = b.syncHeldSince.Add(SynchronizedOutputRepairDelay)
+			b.syncEndPending = true
+		}
 		if bytes.Contains(sequence[end+len(synchronizedOutputEnd):], showCursor) {
 			b.syncDeadline = time.Time{}
 			b.syncEndPending = false
 		}
 	}
+	b.cursorHidden = cursorHiddenAfter(sequence, b.cursorHidden)
 	if len(sequence) > len(synchronizedOutputEnd)-1 {
 		sequence = sequence[len(sequence)-(len(synchronizedOutputEnd)-1):]
 	}
 	b.sequenceTail = append(b.sequenceTail[:0], sequence...)
+}
+
+// cursorHiddenAfter reports whether the cursor is hidden after sequence, keeping the prior state when it has no ?25h/?25l.
+func cursorHiddenAfter(sequence []byte, hidden bool) bool {
+	show, hide := bytes.LastIndex(sequence, showCursor), bytes.LastIndex(sequence, hideCursor)
+	if show < 0 && hide < 0 {
+		return hidden
+	}
+	return hide > show
 }
 
 func (b *OutputBatcher) emitAll(payloads [][]byte) {
