@@ -10,6 +10,7 @@
   } from "../services/terminalOptions";
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
   import { mouseWheelReport } from "../services/wheelReport";
+  import { modifyOtherKeysSequence } from "../services/modifyOtherKeys";
   export let id: string;
   export let active: boolean;
   export let settings: Settings;
@@ -121,16 +122,37 @@
         terminal.parser.registerOscHandler(identifier, (data) => data === "?"),
       ),
     ];
-    terminal.attachCustomKeyEventHandler((e) =>
-      handleKey(
-        e,
-        terminal,
-        execute,
-        (text) => bridge().Copy(text),
-        error,
-        settings.keybindings,
-      ),
+    // xterm.js ignores XTMODKEYS (CSI > 4 ; level m); track it so dropped Ctrl chords can be encoded.
+    let modifyOtherKeysLevel = 0;
+    const modifyOtherKeys = terminal.parser.registerCsiHandler(
+      { prefix: ">", final: "m" },
+      (params) => {
+        if (params[0] !== 4) return false;
+        modifyOtherKeysLevel = typeof params[1] === "number" ? params[1] : 0;
+        return true;
+      },
     );
+    terminal.attachCustomKeyEventHandler((e) => {
+      if (
+        !handleKey(
+          e,
+          terminal,
+          execute,
+          (text) => bridge().Copy(text),
+          error,
+          settings.keybindings,
+        )
+      )
+        return false;
+      const sequence = modifyOtherKeysSequence(e, modifyOtherKeysLevel, {
+        alternateScreen: terminal.buffer.active.type === "alternate",
+        bracketedPaste: terminal.modes.bracketedPasteMode,
+      });
+      if (!sequence) return true;
+      e.preventDefault();
+      terminal.input(sequence, true);
+      return false;
+    });
     let wheelPartial = 0;
     // Inbox ConPTY swallows the app's mouse-mode requests, so xterm never sees them and would turn
     // alt-screen wheel into Up/Down keys (history in pi). Send SGR wheel reports instead; ConPTY
@@ -220,6 +242,7 @@
           if (disposed) return;
           if (output.snapshot) {
             terminal.reset();
+            modifyOtherKeysLevel = 0;
             if (output.columns && output.rows)
               terminal.resize(output.columns, output.rows);
           }
@@ -259,6 +282,7 @@
       data.dispose();
       scroll.dispose();
       queryHandlers.forEach((handler) => handler.dispose());
+      modifyOtherKeys.dispose();
       disposeWebgl();
       terminal.dispose();
       void bridge().Detach(streamID);

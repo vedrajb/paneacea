@@ -348,6 +348,7 @@ func (r *Runtime) launch(p *model.Pane) error {
 	output.modes = map[ansi.Mode]bool{}
 	output.emulator.SetScrollbackSize(historyLines)
 	output.emulator.SetCallbacks(vt.Callbacks{EnableMode: func(mode ansi.Mode) { output.modes[mode] = true }, DisableMode: func(mode ansi.Mode) { output.modes[mode] = false }})
+	output.emulator.RegisterCsiHandler(ansi.Command('>', 0, 'm'), output.trackModifyOtherKeys)
 	// Saved terminal output is not replayed on launch; restored panes start a fresh shell in their
 	// saved working directory, and Git Bash keeps its per-pane command history (HISTFILE) below.
 	historyWarning := ""

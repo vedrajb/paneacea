@@ -26,6 +26,7 @@ type outputBuffer struct {
 	changed             chan struct{}
 	emulator            *vt.Emulator
 	modes               map[ansi.Mode]bool
+	modifyOtherKeys     int
 }
 
 func newOutput() *outputBuffer { return &outputBuffer{changed: make(chan struct{})} }
@@ -173,8 +174,22 @@ func (o *outputBuffer) snapshotLockedWithLimits(maxLines, maxBytes int, includeM
 				data.WriteString(ansi.ResetMode(mode))
 			}
 		}
+		if o.modifyOtherKeys > 0 {
+			fmt.Fprintf(&data, "\x1b[>4;%dm", o.modifyOtherKeys)
+		}
 	}
 	return ipc.Output{Data: []byte(data.String()), Sequence: o.end, Exited: o.exited, Snapshot: true, Restored: o.restored, Columns: o.emulator.Width(), Rows: o.emulator.Height()}
+}
+
+// trackModifyOtherKeys records XTMODKEYS (CSI > 4 ; level m) so a reattached view can restore it.
+// It runs inside emulator.Write, which append already calls with o.mu held.
+func (o *outputBuffer) trackModifyOtherKeys(params ansi.Params) bool {
+	if resource, _, ok := params.Param(0, 0); !ok || resource != 4 {
+		return false
+	}
+	level, _, _ := params.Param(1, 0)
+	o.modifyOtherKeys = max(0, level)
+	return true
 }
 
 func (o *outputBuffer) persistedSnapshot(maxLines, maxBytes int) ([]byte, int, int, uint64, error) {
