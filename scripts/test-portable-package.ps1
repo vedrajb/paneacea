@@ -33,15 +33,17 @@ foreach ($directory in @("Logs")) {
 }
 $legacyExesDirectory = Join-Path $PackageDirectory "exes"
 if (Test-Path -LiteralPath $legacyExesDirectory -PathType Container) { throw "Portable package contains the legacy exes directory: $legacyExesDirectory" }
-foreach ($file in @("pca.cmd", "config.toml")) {
+foreach ($file in @("pca.cmd", "pca", "config.toml")) {
     $path = Join-Path $PackageDirectory $file
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable package file is missing: $path" }
 }
-foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe")) {
+foreach ($name in @("paneacea.exe", "paneacea-cli.exe")) {
     $path = Join-Path $PackageDirectory $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable package executable is missing: $path" }
     if ((Get-Item -LiteralPath $path).Length -le 0) { throw "Portable package executable is empty: $path" }
 }
+$obsoleteRuntime = Join-Path $PackageDirectory "paneacea-runtime.exe"
+if (Test-Path -LiteralPath $obsoleteRuntime) { throw "Portable package contains the obsolete separate runtime: $obsoleteRuntime" }
 foreach ($name in @("conpty.dll", "OpenConsole.exe", "conpty-LICENSE.txt")) {
     $path = Join-Path $PackageDirectory $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable package ConPTY file is missing: $path" }
@@ -49,6 +51,10 @@ foreach ($name in @("conpty.dll", "OpenConsole.exe", "conpty-LICENSE.txt")) {
 }
 $launcher = Get-Content -LiteralPath (Join-Path $PackageDirectory "pca.cmd") -Raw
 if ($launcher -notmatch '%~dp0paneacea\.exe') { throw "Portable launcher does not target paneacea.exe in the package root." }
+if ($launcher -notmatch '%~dp0paneacea-cli\.exe') { throw "Portable launcher does not send CLI arguments to paneacea-cli.exe." }
+$shellLauncher = [System.IO.File]::ReadAllText((Join-Path $PackageDirectory "pca"))
+if ($shellLauncher.Contains("`r")) { throw "Portable shell launcher pca must use LF line endings." }
+if ($shellLauncher -notmatch 'paneacea-cli\.exe" open') { throw "Portable shell launcher pca does not open Paneacea." }
 $config = Get-Content -LiteralPath (Join-Path $PackageDirectory "config.toml") -Raw
 if ($config -notmatch '(?m)^\[settings\]\s*$') { throw "Portable config.toml does not contain a settings section." }
 Write-Host "Portable package validation passed: $PackageDirectory"

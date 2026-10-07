@@ -1,0 +1,8 @@
+#!/bin/sh
+# pca for Git Bash and other MSYS shells (which do not run pca.cmd without its extension).
+# pca: open Paneacea without waiting; pca ARGS: run a CLI command and print its result.
+directory=$(dirname "$0")
+if [ "$#" -eq 0 ]; then
+    exec "$directory/paneacea-cli.exe" open
+fi
+exec "$directory/paneacea-cli.exe" "$@"

@@ -73,25 +73,30 @@ The build writes intermediate executables to `build\bin` and creates the portabl
 ```text
 paneacea-portable/
 ├── paneacea.exe
-├── paneacea-runtime.exe
 ├── paneacea-cli.exe
+├── conpty.dll
+├── OpenConsole.exe
+├── conpty-LICENSE.txt
 ├── Logs/
 ├── config.toml
-└── pca.cmd
+├── pca.cmd
+└── pca
 ```
 
-`config.toml` is seeded with default user settings and is preserved when the package is rebuilt. Launch the packaged app from a terminal with:
+`config.toml` is seeded with default user settings and is preserved when the package is rebuilt.
 
-```powershell
-.\paneacea-portable\pca.cmd
+Add the package folder to your `PATH` to launch Paneacea as `pca` from cmd, PowerShell, or Git Bash (`pca.cmd` serves cmd and PowerShell; the extensionless `pca` serves Git Bash and other MSYS shells):
+
+```text
+pca                      Open Paneacea, or focus it if already open; returns immediately
+pca workspace list       Run a CLI command and print the result (starts Paneacea if needed)
 ```
 
 The build regenerates the executable and taskbar icon from `icons\paneacea-app-icon.svg`. Use `build-wails.ps1` when building the desktop application; a direct `go build` uses the most recently generated Windows icon resource.
 
 The intermediate build output contains:
 
-- `paneacea.exe` — Wails desktop application
-- `paneacea-runtime.exe` — Go runtime
+- `paneacea.exe` — Wails desktop application with the built-in Go runtime
 - `paneacea-cli.exe` — developer protocol CLI
 
 Launch the intermediate build directly with:
@@ -140,28 +145,28 @@ Use the command palette (`Ctrl+Shift+P`) for commands such as `Terminal: Split R
 | Ctrl+C | Copy selected text, or interrupt the terminal |
 | Ctrl+V | Paste clipboard text into the terminal |
 
-Double-click a tab to rename it, drag tabs to reorder them, and right-click for tab actions. Drag splitters to resize panes. Closing the main window leaves terminal sessions running; closing a pane, tab, or workspace terminates its owned sessions.
+Double-click a tab to rename it, drag tabs to reorder them, and right-click for tab actions. Drag splitters to resize panes. Closing the main window ends all terminal sessions after saving the layout; closing a pane, tab, or workspace terminates its owned sessions.
 
 ## Runtime and persistence
 
-The Go runtime owns ConPTY, terminal screen emulation, process monitoring, and persistence. The Wails bridge forwards application requests to the runtime. Closing the GUI detaches the interface without terminating terminal processes, so reopening the app can reconnect to the same sessions.
+`paneacea.exe` is a single process: its Go runtime owns ConPTY, terminal screen emulation, process monitoring, and persistence, and the Wails bridge calls it directly. The same process serves a per-user named pipe for `paneacea-cli.exe` and `pca`. Only one Paneacea runs per install folder; launching it again focuses the open window. Closing the window saves the layout and terminal history, then ends the shells, so nothing keeps running in the background. Reopening Paneacea relaunches the saved panes.
 
-The build bundles Microsoft's ConPTY (`conpty.dll` and `OpenConsole.exe` from the pinned `Microsoft.Windows.Console.ConPTY` NuGet package, fetched by `scripts/fetch-conpty.ps1`) beside `paneacea-runtime.exe`. Unlike the inbox Windows ConPTY it passes application modes such as mouse tracking through to the terminal. Without those files the runtime falls back to the inbox ConPTY; set `PANEACEA_CONPTY=inbox` to force the fallback, or to an absolute `conpty.dll` path to test another build.
+The build bundles Microsoft's ConPTY (`conpty.dll` and `OpenConsole.exe` from the pinned `Microsoft.Windows.Console.ConPTY` NuGet package, fetched by `scripts/fetch-conpty.ps1`) beside `paneacea.exe`. Unlike the inbox Windows ConPTY it passes application modes such as mouse tracking through to the terminal. Without those files the runtime falls back to the inbox ConPTY; set `PANEACEA_CONPTY=inbox` to force the fallback, or to an absolute `conpty.dll` path to test another build.
 
-Runtime data is stored beside `paneacea-runtime.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
+Runtime data is stored beside `paneacea.exe` as `paneacea.db`; logs go to `Logs\paneacea.log`. Set `PANEACEA_DATA_DIR` before launching to use another data directory, for example:
 
 ```powershell
 $env:PANEACEA_DATA_DIR = Join-Path $PWD '.data\dev'
 .\build\bin\paneacea.exe
 ```
 
-The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A normal shell exit closes its pane and removes its saved record, so only active shell panes are restored after a runtime restart. Shell exits during Windows shutdown or reboot preserve their panes and saved layout. Restored panes use their saved workspace, tab, pane, and launch configuration to start fresh shell processes. Terminal output history is encrypted for the current Windows user, checkpointed every two seconds, and restored before the new shell starts. Settings controls the saved line limit; Off deletes saved history. Git Bash panes save separate command recall files in the data directory's `bash-history` folder. These Bash files are plaintext, unlike encrypted terminal output snapshots. Abrupt shutdown may lose output since the last successful checkpoint, and output from before this feature was added cannot be recovered.
+The Go runtime uses an independent protocol and database; existing Rust/WPF workspaces are not imported. A normal shell exit closes its pane and removes its saved record, so only active shell panes are restored after a runtime restart. Shell exits during Windows shutdown or reboot preserve their panes and saved layout. Restored panes use their saved workspace, tab, pane, and launch configuration to start fresh shell processes. Terminal output history is encrypted for the current Windows user and checkpointed every two seconds; restored panes start a fresh shell rather than replaying saved output. Settings controls the saved line limit; Off deletes saved history. Git Bash panes save separate command recall files in the data directory's `bash-history` folder. These Bash files are plaintext, unlike encrypted terminal output snapshots. Abrupt shutdown may lose output since the last successful checkpoint, and output from before this feature was added cannot be recovered.
 
-Closing the Paneacea window stops active registered agent panes while leaving ordinary terminal panes running. Starting Paneacea again relaunches those agent sessions from their captured session IDs and waits for the next prompt.
+Closing the Paneacea window stops active registered agent panes and ends ordinary terminal panes. Starting Paneacea again relaunches the panes, and agent sessions resume from their captured session IDs.
 
 ## Developer CLI
 
-Build the application first, then use the CLI while the runtime is available:
+Build the application first. The CLI talks to the running app and starts Paneacea in the background if it is not open, so the calling terminal is never blocked:
 
 ```powershell
 .\build\bin\paneacea-cli.exe workspace list
@@ -191,11 +196,7 @@ For the browser interaction suite, run `npm run test:browser` from `frontend`. I
 ## Architecture
 
 ```text
-paneacea.exe (Wails + Svelte)
-          |
-  per-user named pipe
-          |
-paneacea-runtime.exe (Go)
+paneacea.exe (Wails + Svelte + Go runtime) <-- per-user named pipe --- paneacea-cli.exe / pca
       |             |
    ConPTY        SQLite
       |

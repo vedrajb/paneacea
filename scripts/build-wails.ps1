@@ -20,8 +20,6 @@ node (Join-Path $projectDirectory "frontend\scripts\generate-windows-icon.mjs")
 if ($LASTEXITCODE -ne 0) { throw "Windows icon generation failed." }
 go run .\scripts\generate-windows-resource.go -icon .\build\icon-assets\paneacea.ico -out .\cmd\paneacea\paneacea_windows_amd64.syso
 if ($LASTEXITCODE -ne 0) { throw "Windows resource generation failed." }
-go build -trimpath -o build/bin/paneacea-runtime.exe ./cmd/paneacea-runtime
-if ($LASTEXITCODE -ne 0) { throw "Runtime build failed." }
 go build -trimpath -o build/bin/paneacea-cli.exe ./cmd/paneacea-cli
 if ($LASTEXITCODE -ne 0) { throw "CLI build failed." }
 if ($Configuration -eq "Release") {
@@ -35,11 +33,18 @@ $portableLogsDirectory = Join-Path $portableDirectory "Logs"
 foreach ($directory in @($portableDirectory, $portableLogsDirectory)) {
     if (-not (Test-Path -LiteralPath $directory)) { New-Item -ItemType Directory -Path $directory | Out-Null }
 }
-foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe")) {
+# The runtime now lives inside paneacea.exe; drop the obsolete separate runtime binary.
+foreach ($directory in @((Join-Path $projectDirectory "build\bin"), $portableDirectory)) {
+    $obsoleteRuntime = Join-Path $directory "paneacea-runtime.exe"
+    if (Test-Path -LiteralPath $obsoleteRuntime -PathType Leaf) { Remove-Item -LiteralPath $obsoleteRuntime }
+}
+foreach ($name in @("paneacea.exe", "paneacea-cli.exe")) {
     Copy-Item -LiteralPath (Join-Path $projectDirectory "build\bin\$name") -Destination $portableDirectory -Force
 }
 & (Join-Path $PSScriptRoot "fetch-conpty.ps1") -Destination @((Join-Path $projectDirectory "build\bin"), $portableDirectory)
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "pca.cmd") -Destination (Join-Path $portableDirectory "pca.cmd") -Force
+# Extensionless launcher so Git Bash and other MSYS shells can run `pca` too.
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "pca") -Destination (Join-Path $portableDirectory "pca") -Force
 $portableConfig = Join-Path $portableDirectory "config.toml"
 if (-not (Test-Path -LiteralPath $portableConfig)) {
     @'

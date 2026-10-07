@@ -19,14 +19,17 @@ The build creates a portable package at `paneacea-portable` with this layout:
 ```text
 paneacea-portable/
 ├── paneacea.exe
-├── paneacea-runtime.exe
 ├── paneacea-cli.exe
+├── conpty.dll
+├── OpenConsole.exe
+├── conpty-LICENSE.txt
 ├── Logs/
 ├── config.toml
-└── pca.cmd
+├── pca.cmd
+└── pca
 ```
 
-`config.toml` is seeded with default user settings and is preserved across rebuilds. Launch the packaged app from a terminal with `.\paneacea-portable\pca.cmd`.
+`config.toml` is seeded with default user settings and is preserved across rebuilds. With the package folder on `PATH`, `pca` opens (or focuses) Paneacea without blocking the terminal, and `pca ARGS` runs a CLI command; `pca.cmd` covers cmd and PowerShell, the extensionless `pca` covers Git Bash.
 
 To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `paneacea-portable.zip`.
 
@@ -36,11 +39,11 @@ Or launch the intermediate build:
 .\build\bin\paneacea.exe
 ```
 
-The build script compiles all three binaries together. It uses the workspace-local Go toolchain if present, otherwise Go from PATH. A separately installed Wails CLI is not required.
+The build script compiles both binaries together. It uses the workspace-local Go toolchain if present, otherwise Go from PATH. A separately installed Wails CLI is not required.
 
-Keep `paneacea.exe`, `paneacea-runtime.exe`, and `paneacea-cli.exe` in the same directory. The GUI starts the runtime when needed. Closing the GUI leaves terminal processes running. Closing a pane, tab, or workspace terminates its owned sessions.
+Keep `paneacea.exe`, `paneacea-cli.exe`, and the ConPTY files in the same directory. `paneacea.exe` runs the runtime in-process and serves the named pipe for the CLI; the CLI starts `paneacea.exe` in the background when it is not running. Closing the window saves state and ends all terminal processes. Closing a pane, tab, or workspace terminates its owned sessions.
 
-The runtime stores SQLite metadata beside `paneacea-runtime.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before starting the runtime to choose a different directory. This database is separate from the Rust runtime's data. Existing Rust/WPF workspaces are not imported.
+The runtime stores SQLite metadata beside `paneacea.exe` as `paneacea.db`. Set `PANEACEA_DATA_DIR` before starting Paneacea to choose a different directory. This database is separate from the Rust runtime's data. Existing Rust/WPF workspaces are not imported.
 
 ## Use
 

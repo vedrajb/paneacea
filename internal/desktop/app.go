@@ -4,23 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/paneacea/paneacea/internal/ipc"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"sync"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/options"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// stream is one terminal view's output subscription; cancelling it ends a pending read.
+type stream struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
 
 type App struct {
 	mu      sync.Mutex
 	ctx     context.Context
-	client  *ipc.Client
-	streams map[string]*ipc.Client
+	host    *host
+	streams map[string]*stream
 }
 
-func New() *App { return &App{streams: map[string]*ipc.Client{}} }
+func New() *App { return &App{host: newHost(), streams: map[string]*stream{}} }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	a.host.begin()
 }
 func (a *App) DomReady(ctx context.Context) {
 	wailsruntime.WindowShow(ctx)
@@ -30,67 +38,83 @@ func (a *App) DomReady(ctx context.Context) {
 		found = focusWebView()
 	}
 }
+
+// Shutdown stops agents and shells and saves state; nothing keeps running after the window.
 func (a *App) Shutdown(context.Context) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.client != nil {
-		_, _ = a.client.Call("agent.stop", nil)
-		a.client.Close()
-		a.client = nil
+	for _, s := range a.streams {
+		s.cancel()
 	}
-	for _, c := range a.streams {
-		c.Close()
-	}
-	a.streams = map[string]*ipc.Client{}
+	a.streams = map[string]*stream{}
+	a.mu.Unlock()
+	a.host.close()
 }
-func (a *App) Call(method string, params json.RawMessage) (json.RawMessage, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.client == nil {
-		client, err := ipc.EnsureLocal(a.ctx)
-		if err != nil {
+
+// SecondInstance brings the existing window forward when Paneacea is launched again.
+func (a *App) SecondInstance(options.SecondInstanceData) {
+	if a.ctx == nil {
+		return
+	}
+	wailsruntime.WindowUnminimise(a.ctx)
+	wailsruntime.WindowShow(a.ctx)
+	focusWebView()
+}
+
+func (a *App) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	runtime, err := a.host.wait()
+	if err != nil {
+		return nil, err
+	}
+	var raw json.RawMessage
+	switch value := params.(type) {
+	case json.RawMessage:
+		raw = value
+	case nil:
+	default:
+		if raw, err = json.Marshal(value); err != nil {
 			return nil, err
 		}
-		a.client = client
 	}
-	result, err := a.client.Call(method, params)
+	result, err := runtime.Call(ctx, method, raw)
 	if err != nil {
-		a.client.Close()
-		a.client = nil
+		return nil, err
 	}
-	return result, err
+	return json.Marshal(result)
+}
+
+func (a *App) Call(method string, params json.RawMessage) (json.RawMessage, error) {
+	return a.call(context.Background(), method, params)
 }
 func (a *App) ReadOutput(streamID, id string, sequence uint64) (json.RawMessage, error) {
 	a.mu.Lock()
-	client := a.streams[streamID]
+	current := a.streams[streamID]
 	method := "terminal.read"
-	if client == nil {
+	if current == nil {
 		method = "terminal.attach"
-		var err error
-		client, err = ipc.ConnectLocal(a.ctx)
-		if err != nil {
-			a.mu.Unlock()
-			return nil, err
-		}
-		a.streams[streamID] = client
+		ctx, cancel := context.WithCancel(context.Background())
+		current = &stream{ctx: ctx, cancel: cancel}
+		a.streams[streamID] = current
 	}
 	a.mu.Unlock()
-	result, err := client.Call(method, map[string]any{"paneId": id, "sequence": sequence})
+	result, err := a.call(current.ctx, method, map[string]any{"paneId": id, "sequence": sequence})
+	if err == nil && current.ctx.Err() != nil {
+		err = current.ctx.Err()
+	}
 	if err != nil {
 		a.mu.Lock()
-		if a.streams[streamID] == client {
+		if a.streams[streamID] == current {
 			delete(a.streams, streamID)
 		}
 		a.mu.Unlock()
-		client.Close()
+		current.cancel()
 	}
 	return result, err
 }
 func (a *App) Detach(id string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if client := a.streams[id]; client != nil {
-		client.Close()
+	if current := a.streams[id]; current != nil {
+		current.cancel()
 		delete(a.streams, id)
 	}
 }

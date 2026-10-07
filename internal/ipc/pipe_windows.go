@@ -15,7 +15,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func Address() (string, error) {
+// InstanceID identifies this user's Paneacea installation: the user SID plus a hash of the
+// executable's folder. It names the pipe and the single-instance lock.
+func InstanceID() (string, error) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return "", err
@@ -28,7 +30,15 @@ func Address() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return `\\.\pipe\paneacea-go-` + user.User.Sid.String() + "-" + pipeSuffix(directory), nil
+	return user.User.Sid.String() + "-" + pipeSuffix(directory), nil
+}
+
+func Address() (string, error) {
+	id, err := InstanceID()
+	if err != nil {
+		return "", err
+	}
+	return `\\.\pipe\paneacea-go-` + id, nil
 }
 
 func pipeSuffix(directory string) string {
