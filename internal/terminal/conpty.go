@@ -411,12 +411,14 @@ func (p *conptyProcess) Close() error {
 		p.input = nil
 		output := p.output
 		p.output = nil
+		// Terminate while holding the lock: releaseResources closes p.process under the same lock
+		// once Wait returns, so the handle cannot be closed or reused underneath this call.
+		if processHandle != 0 {
+			_ = windows.TerminateProcess(processHandle, 1)
+		}
 		p.mu.Unlock()
 		if jobHandle != 0 {
 			_ = windows.CloseHandle(jobHandle)
-		}
-		if processHandle != 0 {
-			_ = windows.TerminateProcess(processHandle, 1)
 		}
 		if pseudo != 0 {
 			p.console.close(pseudo)
@@ -425,10 +427,12 @@ func (p *conptyProcess) Close() error {
 			_ = input.Close()
 		}
 		if output != nil {
-			_ = output.Close()
+			// Closing the pipe cancels the pending ReadFile with CancelIoEx, which has been seen to
+			// block indefinitely; the reader also stops on EOF once the console host exits.
+			go output.Close()
 		}
 	})
-	return p.Wait()
+	return waitWithTimeout(p.Wait, terminalCloseTimeout)
 }
 
 func (p *conptyProcess) PID() uint32 {

@@ -1,10 +1,26 @@
 package terminal
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"time"
 )
+
+// terminalCloseTimeout bounds how long Close waits for a terminal to finish exiting, so a
+// console host that never releases its pipes cannot hang runtime shutdown.
+var terminalCloseTimeout = 5 * time.Second
+
+func waitWithTimeout(wait func() error, timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() { done <- wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("terminal did not exit within %v", timeout)
+	}
+}
 
 const (
 	DefaultColumns uint16 = 120
@@ -108,7 +124,9 @@ func (s *Session) Close() error {
 		s.closeError = err
 		s.closeMu.Unlock()
 	})
-	<-s.done
+	if err := waitWithTimeout(func() error { <-s.done; return nil }, terminalCloseTimeout); err != nil {
+		return err
+	}
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
 	return s.closeError
