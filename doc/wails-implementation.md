@@ -31,7 +31,7 @@ paneacea-portable/
 
 `config.toml` is seeded with default user settings and is preserved across rebuilds. With the package folder on `PATH`, `pca` opens (or focuses) Paneacea without blocking the terminal, and `pca ARGS` runs a CLI command; `pca.cmd` covers cmd and PowerShell, the extensionless `pca` covers Git Bash.
 
-To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `paneacea-portable.zip`.
+To delete and recreate the portable package and archive it, run `.\package.bat`. This writes `paneacea-portable-YYYY-MM-DD.zip` with the current date.
 
 Or launch the intermediate build:
 

@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $packageScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\package.bat") -Raw
-foreach ($expected in @('set "PACKAGE_DIRECTORY=%~dp0paneacea-portable"', 'set "ARCHIVE_PATH=%~dp0paneacea-portable.zip"')) {
+foreach ($expected in @('set "PACKAGE_DIRECTORY=%~dp0paneacea-portable"', 'set "ARCHIVE_PATH=%~dp0paneacea-portable-%PACKAGE_DATE%.zip"')) {
     if (-not $packageScript.Contains($expected)) { throw "package.bat does not target $expected." }
 }
 $buildScript = Get-Content -LiteralPath (Join-Path $PSScriptRoot "build-wails.ps1") -Raw

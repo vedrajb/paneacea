@@ -8,6 +8,7 @@ target/
 /paneacea-portable/
 /paneacea-portable-*/
 /paneacea-portable.zip
+/paneacea-portable-*.zip
 wails-prototype/
 *.user
 *.log

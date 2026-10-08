@@ -59,7 +59,7 @@ To recreate the portable package from scratch and create a zip archive, run:
 .\package.bat
 ```
 
-This recreates `paneacea-portable` and writes `paneacea-portable.zip`.
+This recreates `paneacea-portable` and writes `paneacea-portable-YYYY-MM-DD.zip` with the current date.
 
 The PowerShell build script can also be run directly. Omit `-Run` to build without launching:
 
