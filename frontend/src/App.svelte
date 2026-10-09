@@ -487,6 +487,25 @@
   }
   function popupKey(event: KeyboardEvent) {
     if (event.defaultPrevented) return;
+    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key === "Tab") {
+      const workspaces = state?.workspaces ?? [];
+      if (!workspaces.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.shiftKey ? -1 : 1;
+      if (!workspaceListOpen) {
+        if (palette || modal || confirmation || settingsOpen || shortcutsOpen || menu) return;
+        openWorkspaceSelector();
+      }
+      workspaceListIndex =
+        (workspaceListIndex + direction + workspaces.length) % workspaces.length;
+      requestAnimationFrame(() =>
+        document
+          .querySelectorAll<HTMLButtonElement>(".workspace-list button")
+          [workspaceListIndex]?.focus(),
+      );
+      return;
+    }
     const popupOpen =
       palette ||
       modal ||
