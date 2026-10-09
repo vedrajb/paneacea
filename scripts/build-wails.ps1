@@ -5,7 +5,6 @@ param(
 )
 . "$PSScriptRoot\wails-env.ps1"
 . "$PSScriptRoot\stop-wails.ps1"
-Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "build\bin")
 Stop-WailsProcesses -BuildDirectory (Join-Path $projectDirectory "paneacea-portable")
 Write-Host "Building $Configuration configuration."
 Push-Location frontend

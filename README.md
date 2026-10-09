@@ -39,7 +39,7 @@ Build without launching:
 .\build.bat
 ```
 
-Stop all running Paneacea application, runtime, and CLI executables:
+Stop only the paneacea.exe running from the paneacea-portable folder:
 
 ```powershell
 .\scripts\stop-paneacea.bat
