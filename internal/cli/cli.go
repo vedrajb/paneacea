@@ -16,6 +16,7 @@ import (
 func Run(args []string, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		_, err := fmt.Fprintln(out, `Paneacea CLI
+  open              Open Paneacea (or focus it) without waiting
   workspace list | create NAME ROOT | switch NAME_OR_ID
   tab create | rename TITLE | close
   pane split --right | --down
@@ -23,6 +24,9 @@ func Run(args []string, out io.Writer) error {
   METHOD JSON       Send any runtime protocol request
 Environment: PANEACEA_PANE_ID and PANEACEA_WORKSPACE_ID select context.`)
 		return err
+	}
+	if args[0] == "open" && len(args) == 1 {
+		return ipc.Launch()
 	}
 	client, err := ipc.Ensure(context.Background())
 	if err != nil {

@@ -1,18 +1,19 @@
 $ErrorActionPreference = "Stop"
 
-$scriptPath = Join-Path $PSScriptRoot "stop-paneacea.bat"
-$contents = Get-Content -LiteralPath $scriptPath -Raw
-foreach ($name in @("paneacea.exe", "paneacea-runtime.exe", "paneacea-cli.exe")) {
-    if ($contents -notmatch [regex]::Escape($name)) {
-        throw "stop-paneacea.bat does not target $name."
-    }
+$psContents = Get-Content -LiteralPath (Join-Path $PSScriptRoot "stop-paneacea.ps1") -Raw
+if ($psContents -notmatch 'paneacea\.exe' -or $psContents -notmatch 'MainModule\.FileName' -or $psContents -notmatch 'Stop-Process') {
+    throw "stop-paneacea.ps1 does not stop paneacea.exe by path."
 }
-if ($contents -notmatch 'taskkill /F /IM "%%P"') {
-    throw "stop-paneacea.bat does not stop matching processes."
+if ($psContents -match 'paneacea-runtime|paneacea-cli') {
+    throw "stop-paneacea.ps1 must not target other Paneacea processes."
+}
+$batContents = Get-Content -LiteralPath (Join-Path $PSScriptRoot "stop-paneacea.bat") -Raw
+if ($batContents -notmatch 'stop-paneacea\.ps1') {
+    throw "stop-paneacea.bat does not delegate to stop-paneacea.ps1."
 }
 $wailsContents = Get-Content -LiteralPath (Join-Path $PSScriptRoot "stop-wails.ps1") -Raw
-if ($wailsContents -notmatch [regex]::Escape('& "$PSScriptRoot\stop-paneacea.bat"')) {
-    throw "stop-wails.ps1 does not reuse stop-paneacea.bat."
+if ($wailsContents -notmatch [regex]::Escape('stop-paneacea.ps1')) {
+    throw "stop-wails.ps1 does not reuse stop-paneacea.ps1."
 }
 $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\package.json") -Raw | ConvertFrom-Json
 if ($package.scripts.stop -ne "scripts\stop-paneacea.bat") {

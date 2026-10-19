@@ -673,6 +673,44 @@ test("keeps the clicked pane active when a stale refresh arrives", async ({
   });
 });
 
+test("highlights the active pane header without shifting the pane", async ({
+  page,
+}) => {
+  await page.goto("/?startupFirstPane");
+  const panes = page.locator(".pane");
+  await expect(panes).toHaveCount(2);
+  const layout = () =>
+    panes.evaluateAll((elements) =>
+      elements.map((pane) => {
+        const terminal = pane.querySelector(".xterm-host")!.getBoundingClientRect();
+        return {
+          active: pane.classList.contains("active"),
+          header: getComputedStyle(pane.querySelector(".pane-header")!).backgroundColor,
+          border: getComputedStyle(pane).borderTopWidth,
+          top: Math.round(terminal.top),
+          height: Math.round(terminal.height),
+        };
+      }),
+    );
+  const activeHeader = "rgb(38, 79, 120)";
+  const inactiveHeader = "rgb(22, 22, 22)";
+  await expect.poll(async () => (await layout()).map((pane) => pane.active)).toEqual([false, true]);
+  const before = await layout();
+  expect(before.map((pane) => pane.header)).toEqual([inactiveHeader, activeHeader]);
+  await panes.first().locator(".pane-name").click();
+  await expect(panes.first()).toHaveClass(/active/);
+  const after = await layout();
+  expect(after.map((pane) => pane.header)).toEqual([activeHeader, inactiveHeader]);
+  for (const state of [before, after]) {
+    expect(state.map((pane) => pane.border)).toEqual(["1px", "1px"]);
+    expect(state[0].top).toBe(state[1].top);
+    expect(state[0].height).toBe(state[1].height);
+  }
+  expect(after.map((pane) => [pane.top, pane.height])).toEqual(
+    before.map((pane) => [pane.top, pane.height]),
+  );
+});
+
 test("matches the terminal viewport to the terminal background", async ({
   page,
 }) => {
