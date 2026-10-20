@@ -11,6 +11,7 @@
   import { handleKey, handleWheel, type Action } from "../shortcuts/actions";
   import { mouseWheelReport } from "../services/wheelReport";
   import { modifyOtherKeysSequence } from "../services/modifyOtherKeys";
+  import { findLinks } from "../services/terminalLinks";
   export let id: string;
   export let active: boolean;
   export let settings: Settings;
@@ -104,6 +105,26 @@
     }
     fit.fit();
     updateRenderer();
+    const linkProvider = terminal.registerLinkProvider({
+      provideLinks(y, callback) {
+        const line = terminal.buffer.active.getLine(y - 1);
+        if (!line) return callback(undefined);
+        const links = findLinks(line.translateToString(true)).map((m) => ({
+          text: m.text,
+          range: {
+            start: { x: m.start + 1, y },
+            end: { x: m.end, y },
+          },
+          decorations: { underline: true, pointerCursor: true },
+          activate: () => {
+            void bridge()
+              .OpenLink(m.text)
+              .catch((e) => error(String(e)));
+          },
+        }));
+        callback(links.length ? links : undefined);
+      },
+    });
     const queryHandlers = [
       ...[
         { final: "n" },
@@ -281,6 +302,7 @@
       observer.disconnect();
       data.dispose();
       scroll.dispose();
+      linkProvider.dispose();
       queryHandlers.forEach((handler) => handler.dispose());
       modifyOtherKeys.dispose();
       disposeWebgl();

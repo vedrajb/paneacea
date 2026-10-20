@@ -121,6 +121,18 @@ func (a *App) Detach(id string) {
 func (a *App) OpenFolder() (string, error) {
 	return wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "Workspace root folder"})
 }
+// OpenLink opens an http(s) URL in the browser, or an existing local file/folder from a file:// URL or Windows path.
+func (a *App) OpenLink(target string) error {
+	path, err := linkPath(target)
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		wailsruntime.BrowserOpenURL(a.ctx, target)
+		return nil
+	}
+	return openPath(path)
+}
 func (a *App) Copy(text string) error {
 	if err := wailsruntime.ClipboardSetText(a.ctx, text); err != nil {
 		return fmt.Errorf("could not copy terminal selection")

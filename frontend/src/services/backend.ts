@@ -84,6 +84,7 @@ type Bridge = {
   Detach(id: string): Promise<void>;
   OpenFolder(): Promise<string>;
   Copy(text: string): Promise<void>;
+  OpenLink(target: string): Promise<void>;
 };
 declare global {
   interface Window {
